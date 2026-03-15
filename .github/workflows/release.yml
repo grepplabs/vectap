@@ -1,0 +1,16 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  verify-code:
+    uses: ./.github/workflows/_verify-code.yaml
+  publish-release:
+    uses: ./.github/workflows/_publish.yaml
+    needs:
+      - verify-code
+    with:
+      go_releaser: true

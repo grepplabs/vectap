@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+./vectap --config examples/vectap-tlmr.yaml tap \
+  --source tr-cons-d01 \
+  --local-filter '+component.kind:sink' \
+  --local-filter '+component.type:prometheus_exporter' \
+  --outputs-of 'prom_exporter' \
+  "$@"

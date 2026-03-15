@@ -1,0 +1,35 @@
+version: 2
+project_name: vectap
+
+builds:
+  - id: vectap
+    main: ./cmd/vectap/main.go
+    binary: vectap
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -a
+    ldflags:
+      - -X github.com/grepplabs/vectap/internal/cli/version.Version={{ .Version }}
+archives: []
+
+checksum:
+  disable: true
+
+changelog:
+  use: git
+  sort: asc
+
+release:
+  github:
+    owner: grepplabs
+    name: vectap
+  draft: false
+  prerelease: auto

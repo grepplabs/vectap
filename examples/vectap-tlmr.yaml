@@ -1,0 +1,42 @@
+defaults:
+  type: kubernetes
+  cluster:
+    kubeconfig: ""
+    context: ""
+  discovery:
+    namespace: default
+    selector: app.kubernetes.io/name=vector
+  transport:
+    vector_port: 8686
+  include_meta: true
+  format: text
+
+sources:
+  - name: local
+    type: direct
+    enabled: true
+    endpoint:
+      url: http://127.0.0.1:8686/graphql
+  - name: tr-cons-d01
+    type: kubernetes
+    enabled: true
+    cluster:
+      kubeconfig: ""
+      context: "tr-cons-d01"
+    discovery:
+      namespace: telemetry-routing-engine-6ecb588d-3413-44ff-a314-ff4db7b49ca8
+      selector: app.kubernetes.io/name=vector
+    transport:
+      vector_port: 8686
+
+  - name: th-cons-d01
+    type: kubernetes
+    enabled: true
+    cluster:
+      kubeconfig: ""
+      context: "th-cons-d01"
+    discovery:
+      namespace: telemetry-hubs
+      selector: app.kubernetes.io/name=vector
+    transport:
+      vector_port: 8686

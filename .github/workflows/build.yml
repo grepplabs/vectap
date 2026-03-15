@@ -1,0 +1,20 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - '**'
+    paths-ignore:
+      - 'README.md'
+      - "test/**"
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - "test/**"
+      - "docs/**"
+jobs:
+  verify-code:
+    uses: ./.github/workflows/_verify-code.yaml
