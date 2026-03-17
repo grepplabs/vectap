@@ -7,6 +7,8 @@
 
 ---
 # vectap
+[![Build](https://github.com/grepplabs/vectap/actions/workflows/build.yml/badge.svg)](https://github.com/grepplabs/vectap/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/grepplabs/vectap?sort=semver)](https://github.com/grepplabs/vectap/releases)
 
 `vectap` is a CLI for streaming events from [Vector](https://vector.dev/) GraphQL tap endpoints. It can
 connect directly to one or more Vector API URLs, or discover Vector pods in
