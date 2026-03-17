@@ -29,7 +29,7 @@ sources:
       kubeconfig: ""
       context: "tr-cons-d01"
     discovery:
-      namespace: telemetry-routing-engine-6ecb588d-3413-44ff-a314-ff4db7b49ca8
+      namespace: vector-k6
       selector: app.kubernetes.io/name=vector
     transport:
       vector_port: 8686
@@ -41,7 +41,7 @@ sources:
       kubeconfig: ""
       context: "th-cons-d01"
     discovery:
-      namespace: telemetry-hubs
+      namespace: vector-k6
       selector: app.kubernetes.io/name=vector
     transport:
       vector_port: 8686
