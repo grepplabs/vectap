@@ -53,11 +53,6 @@ func (r *Runner) runTap(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	evFilter, err := newEventFilter(cfg.LocalFilters)
-	if err != nil {
-		return err
-	}
-
 	if err := r.addRunConfigStreams(ctx, runCfgs, mux); err != nil {
 		return err
 	}
@@ -75,9 +70,6 @@ func (r *Runner) runTap(ctx context.Context, cfg Config) error {
 		case ev, ok := <-mux.Events():
 			if !ok {
 				return nil
-			}
-			if !evFilter.Allow(ev) {
-				continue
 			}
 			if err := renderer.Render(ev); err != nil {
 				return err
@@ -109,7 +101,9 @@ func (r *Runner) addSourceStreams(ctx context.Context, cfg Config, mux *stream.M
 func (r *Runner) addDirectSourceStreams(ctx context.Context, cfg Config, mux *stream.Mux) error {
 	for i, endpointURL := range cfg.DirectURLs {
 		target := directTarget(i, endpointURL)
-		r.addTapStream(ctx, cfg, mux, endpointURL, target)
+		if err := r.addTapStream(ctx, cfg, mux, endpointURL, target); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -142,22 +136,32 @@ func (r *Runner) addKubernetesSourceStreams(ctx context.Context, cfg Config, mux
 		if err != nil {
 			return fmt.Errorf("start port-forward for %s: %w", target.ID, err)
 		}
-		r.addTapStream(ctx, cfg, mux, session.EndpointURL, target)
+		if err := r.addTapStream(ctx, cfg, mux, session.EndpointURL, target); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) {
+func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) error {
+	evFilter, err := newEventFilter(cfg.LocalFilters)
+	if err != nil {
+		return err
+	}
 	events, errs := r.client.Tap(ctx, endpointURL, newTapRequest(cfg, target))
 	outCh := make(chan output.Event)
 	go func() {
 		defer close(outCh)
 		for ev := range events {
-			outCh <- withSourcePrefix(ev.ToOutput(target), cfg.SourceName)
+			out := withSourcePrefix(ev.ToOutput(target), cfg.SourceName)
+			if evFilter.Allow(out) {
+				outCh <- out
+			}
 		}
 	}()
 	mux.Add(target.ID, outCh, errs)
+	return nil
 }
 
 func newTapRequest(cfg Config, target targets.Target) vectorapi.TapRequest {
@@ -269,12 +273,63 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 		sc.IncludeMeta = s.IncludeMeta
 		sc.Format = s.Format
 		sc.SourceName = s.Name
+		if s.ApplyDefaults {
+			sc.OutputsOf = append(append([]string{}, cfg.OutputsOf...), s.OutputsOf...)
+			sc.InputsOf = append(append([]string{}, cfg.InputsOf...), s.InputsOf...)
+			sc.LocalFilters = mergeLocalFilters(cfg.LocalFilters, s.LocalFilters)
+		} else {
+			sc.OutputsOf = append([]string{}, s.OutputsOf...)
+			sc.InputsOf = append([]string{}, s.InputsOf...)
+			sc.LocalFilters = cloneLocalFilters(s.LocalFilters)
+		}
 		sc.Sources = nil
 		sc.SelectedSources = nil
 		sc.AllSources = false
 		out = append(out, sc)
 	}
 	return out, nil
+}
+
+func mergeLocalFilters(base, extra LocalFilters) LocalFilters {
+	out := cloneLocalFilters(base)
+	out.ComponentType = mergeLocalFilterRules(out.ComponentType, extra.ComponentType)
+	out.ComponentKind = mergeLocalFilterRules(out.ComponentKind, extra.ComponentKind)
+	out.Name = mergeLocalFilterRules(out.Name, extra.Name)
+	out.TagComponentID = mergeLocalFilterRules(out.TagComponentID, extra.TagComponentID)
+	out.TagComponentKind = mergeLocalFilterRules(out.TagComponentKind, extra.TagComponentKind)
+	out.TagComponentType = mergeLocalFilterRules(out.TagComponentType, extra.TagComponentType)
+	out.TagHost = mergeLocalFilterRules(out.TagHost, extra.TagHost)
+	return out
+}
+
+func cloneLocalFilters(in LocalFilters) LocalFilters {
+	return LocalFilters{
+		ComponentType:    cloneLocalFilterRules(in.ComponentType),
+		ComponentKind:    cloneLocalFilterRules(in.ComponentKind),
+		Name:             cloneLocalFilterRules(in.Name),
+		TagComponentID:   cloneLocalFilterRules(in.TagComponentID),
+		TagComponentKind: cloneLocalFilterRules(in.TagComponentKind),
+		TagComponentType: cloneLocalFilterRules(in.TagComponentType),
+		TagHost:          cloneLocalFilterRules(in.TagHost),
+	}
+}
+
+func mergeLocalFilterRules(base, extra LocalFilterRules) LocalFilterRules {
+	out := cloneLocalFilterRules(base)
+	out.IncludeGlob = append(out.IncludeGlob, extra.IncludeGlob...)
+	out.ExcludeGlob = append(out.ExcludeGlob, extra.ExcludeGlob...)
+	out.IncludeRE = append(out.IncludeRE, extra.IncludeRE...)
+	out.ExcludeRE = append(out.ExcludeRE, extra.ExcludeRE...)
+	return out
+}
+
+func cloneLocalFilterRules(in LocalFilterRules) LocalFilterRules {
+	return LocalFilterRules{
+		IncludeGlob: append([]string{}, in.IncludeGlob...),
+		ExcludeGlob: append([]string{}, in.ExcludeGlob...),
+		IncludeRE:   append([]string{}, in.IncludeRE...),
+		ExcludeRE:   append([]string{}, in.ExcludeRE...),
+	}
 }
 
 func withSourcePrefix(ev output.Event, sourceName string) output.Event {

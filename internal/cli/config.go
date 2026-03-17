@@ -44,15 +44,17 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 			VectorPort:      resolveInt(v, cliFlagSet, "vector-port", defs.Transport.VectorPort),
 			IncludeMeta:     topIncludeMeta,
 		},
-		Sources:      sources,
-		OutputsOf:    getList(v, "outputs-of"),
-		InputsOf:     getList(v, "inputs-of"),
+		Sources: sources,
+		TapScopeConfig: tap.TapScopeConfig{
+			OutputsOf: resolveStringSliceList(v, cliFlagSet, "outputs-of", defs.OutputsOf),
+			InputsOf:  resolveStringSliceList(v, cliFlagSet, "inputs-of", defs.InputsOf),
+			Interval:  resolveInt(v, cliFlagSet, "interval", defs.Transport.Interval),
+			Limit:     resolveInt(v, cliFlagSet, "limit", defs.Transport.Limit),
+		},
 		LocalFilters: tap.LocalFilters{},
 		NoColor:      v.GetBool("no-color"),
-		Interval:     resolveInt(v, cliFlagSet, "interval", defs.Transport.Interval),
-		Limit:        resolveInt(v, cliFlagSet, "limit", defs.Transport.Limit),
 	}
-	localFilters, err := parseLocalFilters(splitCSVSlice(v.GetStringSlice("local-filter")))
+	localFilters, err := parseLocalFilters(resolveStringSliceList(v, cliFlagSet, "local-filter", defs.LocalFilters))
 	if err != nil {
 		return tap.Config{}, err
 	}
@@ -97,10 +99,13 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 }
 
 type defaultsFile struct {
-	Type      string `mapstructure:"type"`
-	DirectURL string `mapstructure:"direct_url"`
-	Format    string `mapstructure:"format"`
-	Cluster   struct {
+	Type         string   `mapstructure:"type"`
+	DirectURL    string   `mapstructure:"direct_url"`
+	Format       string   `mapstructure:"format"`
+	OutputsOf    []string `mapstructure:"outputs_of"`
+	InputsOf     []string `mapstructure:"inputs_of"`
+	LocalFilters []string `mapstructure:"local_filters"`
+	Cluster      struct {
 		KubeConfig string `mapstructure:"kubeconfig"`
 		Context    string `mapstructure:"context"`
 	} `mapstructure:"cluster"`
@@ -117,12 +122,16 @@ type defaultsFile struct {
 }
 
 type sourceFile struct {
-	Name        string `mapstructure:"name"`
-	Type        string `mapstructure:"type"`
-	Enabled     *bool  `mapstructure:"enabled"`
-	Format      string `mapstructure:"format"`
-	IncludeMeta *bool  `mapstructure:"include_meta"`
-	Cluster     struct {
+	Name          string   `mapstructure:"name"`
+	Type          string   `mapstructure:"type"`
+	Enabled       *bool    `mapstructure:"enabled"`
+	Format        string   `mapstructure:"format"`
+	IncludeMeta   *bool    `mapstructure:"include_meta"`
+	OutputsOf     []string `mapstructure:"outputs_of"`
+	InputsOf      []string `mapstructure:"inputs_of"`
+	LocalFilter   []string `mapstructure:"local_filters"`
+	ApplyDefaults *bool    `mapstructure:"apply_defaults"`
+	Cluster       struct {
 		KubeConfig string `mapstructure:"kubeconfig"`
 		Context    string `mapstructure:"context"`
 	} `mapstructure:"cluster"`
@@ -148,6 +157,7 @@ func loadDefaults(v *viper.Viper) (defaultsFile, error) {
 	return defs, nil
 }
 
+//nolint:funlen
 func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool) ([]tap.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
@@ -168,6 +178,14 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 		enabled := ptr.Deref(s.Enabled, true)
 		format := ptr.Default(s.Format, defaultFormat)
 		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
+		outputsOf := splitCSVSlice(append([]string{}, s.OutputsOf...))
+		inputsOf := splitCSVSlice(append([]string{}, s.InputsOf...))
+		localFilterRules := splitCSVSlice(append([]string{}, s.LocalFilter...))
+		localFilters, err := parseLocalFilters(localFilterRules)
+		if err != nil {
+			return nil, fmt.Errorf("source %q: %w", s.Name, err)
+		}
+		applyDefaults := ptr.Deref(s.ApplyDefaults, true)
 		namespace := ptr.Default(s.Discovery.Namespace, fallbackNamespace)
 		selector := ptr.Default(s.Discovery.Selector, fallbackSelector)
 		vectorPort := ptr.Default(ptr.Deref(s.Transport.VectorPort, 0), fallbackVectorPort)
@@ -201,8 +219,14 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 				VectorPort:     vectorPort,
 				IncludeMeta:    includeMeta,
 			},
-			Interval: interval,
-			Limit:    limit,
+			TapScopeConfig: tap.TapScopeConfig{
+				OutputsOf: outputsOf,
+				InputsOf:  inputsOf,
+				Interval:  interval,
+				Limit:     limit,
+			},
+			LocalFilters:  localFilters,
+			ApplyDefaults: applyDefaults,
 		})
 	}
 	return out, nil
@@ -276,6 +300,16 @@ func resolveStringSlice(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaults
 	}
 	if defaultsValue != "" {
 		return []string{defaultsValue}
+	}
+	return getList(v, key)
+}
+
+func resolveStringSliceList(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue []string) []string {
+	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
+		return getList(v, key)
+	}
+	if len(defaultsValue) > 0 {
+		return splitCSVSlice(append([]string{}, defaultsValue...))
 	}
 	return getList(v, key)
 }

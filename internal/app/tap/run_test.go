@@ -89,3 +89,91 @@ func TestFormatForRender(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestExpandRunConfigsSourceDefaultsApplied(t *testing.T) {
+	cfg := testTapConfig(
+		runconfig.BaseConfig{
+			AllSources: true,
+		},
+		func(c *Config) {
+			c.OutputsOf = []string{"global-out"}
+			c.InputsOf = []string{"global-in"}
+			c.LocalFilters = LocalFilters{
+				ComponentKind: LocalFilterRules{IncludeGlob: []string{"sink"}},
+			}
+			c.Sources = []SourceConfig{
+				{
+					BaseSourceConfig: runconfig.BaseSourceConfig{
+						Name:       "src-a",
+						Type:       runconfig.SourceTypeDirect,
+						Enabled:    true,
+						DirectURLs: []string{runconfig.DefaultDirectURL},
+						Format:     runconfig.FormatText,
+						Namespace:  runconfig.DefaultNamespace,
+						VectorPort: runconfig.DefaultVectorPort,
+					},
+					LocalFilters:  LocalFilters{ComponentType: LocalFilterRules{IncludeGlob: []string{"aws_*"}}},
+					ApplyDefaults: true,
+					TapScopeConfig: TapScopeConfig{
+						OutputsOf: []string{"source-out"},
+						InputsOf:  []string{"source-in"},
+						Interval:  runconfig.DefaultTapInterval,
+						Limit:     runconfig.DefaultTapLimit,
+					},
+				},
+			}
+		},
+	)
+
+	runCfgs, err := expandRunConfigs(cfg)
+	require.NoError(t, err)
+	require.Len(t, runCfgs, 1)
+	require.Equal(t, []string{"global-out", "source-out"}, runCfgs[0].OutputsOf)
+	require.Equal(t, []string{"global-in", "source-in"}, runCfgs[0].InputsOf)
+	require.Equal(t, []string{"sink"}, runCfgs[0].LocalFilters.ComponentKind.IncludeGlob)
+	require.Equal(t, []string{"aws_*"}, runCfgs[0].LocalFilters.ComponentType.IncludeGlob)
+}
+
+func TestExpandRunConfigsSourceDefaultsDisabled(t *testing.T) {
+	cfg := testTapConfig(
+		runconfig.BaseConfig{
+			AllSources: true,
+		},
+		func(c *Config) {
+			c.OutputsOf = []string{"global-out"}
+			c.InputsOf = []string{"global-in"}
+			c.LocalFilters = LocalFilters{
+				ComponentKind: LocalFilterRules{IncludeGlob: []string{"sink"}},
+			}
+			c.Sources = []SourceConfig{
+				{
+					BaseSourceConfig: runconfig.BaseSourceConfig{
+						Name:       "src-a",
+						Type:       runconfig.SourceTypeDirect,
+						Enabled:    true,
+						DirectURLs: []string{runconfig.DefaultDirectURL},
+						Format:     runconfig.FormatText,
+						Namespace:  runconfig.DefaultNamespace,
+						VectorPort: runconfig.DefaultVectorPort,
+					},
+					LocalFilters:  LocalFilters{ComponentType: LocalFilterRules{IncludeGlob: []string{"aws_*"}}},
+					ApplyDefaults: false,
+					TapScopeConfig: TapScopeConfig{
+						OutputsOf: []string{"source-out"},
+						InputsOf:  []string{"source-in"},
+						Interval:  runconfig.DefaultTapInterval,
+						Limit:     runconfig.DefaultTapLimit,
+					},
+				},
+			}
+		},
+	)
+
+	runCfgs, err := expandRunConfigs(cfg)
+	require.NoError(t, err)
+	require.Len(t, runCfgs, 1)
+	require.Equal(t, []string{"source-out"}, runCfgs[0].OutputsOf)
+	require.Equal(t, []string{"source-in"}, runCfgs[0].InputsOf)
+	require.Empty(t, runCfgs[0].LocalFilters.ComponentKind.IncludeGlob)
+	require.Equal(t, []string{"aws_*"}, runCfgs[0].LocalFilters.ComponentType.IncludeGlob)
+}
