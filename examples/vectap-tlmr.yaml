@@ -15,8 +15,13 @@ sources:
   - name: local
     type: direct
     enabled: true
+    apply_defaults: false
     endpoint:
       url: http://127.0.0.1:8686/graphql
+    outputs_of:
+      - source.my_logs
+    local_filters:
+      - +component.kind:sink
   - name: tr-cons-d01
     type: kubernetes
     enabled: true

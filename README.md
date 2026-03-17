@@ -88,10 +88,21 @@ sources:
       selector: app=vector
     transport:
       vector_port: 8686
+    outputs_of:
+      - telemetry-*
+    local_filters:
+      - +component.kind:transform
   - name: local
     type: direct
+    apply_defaults: false
     endpoint:
       url: http://127.0.0.1:8686/graphql
+    outputs_of:
+      - source.my_logs
+    inputs_of:
+      - sink.prom_exporter
+    local_filters:
+      - +component.kind:sink
 ```
 
 ```bash
@@ -110,6 +121,15 @@ vectap --config vectap.yaml tap --source eu-prod --source local
 | `--outputs-of` | components (sources, transforms) IDs whose outputs to observe |
 | `--inputs-of` | components (transforms, sinks) IDs whose inputs to observe |
 | `--local-filter` | local include/exclude rules on component fields and payload tags |
+
+When running configured sources (`--source` / `--all-sources`), each source can also set:
+
+- `outputs_of`
+- `inputs_of`
+- `local_filters`
+- `apply_defaults` (default: `true`)
+
+With `apply_defaults: true`, source-level values are appended to top-level defaults (CLI/env/top-level config). With `apply_defaults: false`, only source-level values are used for that source.
 
 ### `--local-filter` grammar
 

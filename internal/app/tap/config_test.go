@@ -11,16 +11,20 @@ func tapConfig(common runconfig.BaseConfig, interval, limit int, sources ...Sour
 	return Config{
 		BaseConfig: common,
 		Sources:    sources,
-		Interval:   interval,
-		Limit:      limit,
+		TapScopeConfig: TapScopeConfig{
+			Interval: interval,
+			Limit:    limit,
+		},
 	}
 }
 
 func sourceConfig(common runconfig.BaseSourceConfig, interval, limit int) SourceConfig {
 	return SourceConfig{
 		BaseSourceConfig: common,
-		Interval:         interval,
-		Limit:            limit,
+		TapScopeConfig: TapScopeConfig{
+			Interval: interval,
+			Limit:    limit,
+		},
 	}
 }
 
@@ -273,6 +277,26 @@ func TestSourceConfigValidateErrors(t *testing.T) {
 				DirectURLs: []string{runconfig.DefaultDirectURL},
 				VectorPort: runconfig.DefaultVectorPort,
 			}, runconfig.DefaultTapInterval, 0),
+		},
+		{
+			name: "invalid source local filter regex",
+			cfg: SourceConfig{
+				BaseSourceConfig: runconfig.BaseSourceConfig{
+					Name:       "src-a",
+					Type:       runconfig.SourceTypeDirect,
+					DirectURLs: []string{runconfig.DefaultDirectURL},
+					VectorPort: runconfig.DefaultVectorPort,
+					Format:     runconfig.FormatText,
+				},
+				LocalFilters: LocalFilters{
+					Name: LocalFilterRules{IncludeRE: []string{"("}},
+				},
+				ApplyDefaults: true,
+				TapScopeConfig: TapScopeConfig{
+					Interval: runconfig.DefaultTapInterval,
+					Limit:    runconfig.DefaultTapLimit,
+				},
+			},
 		},
 	}
 

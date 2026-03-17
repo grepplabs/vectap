@@ -22,6 +22,9 @@ func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	v.Set("defaults.transport.interval", 750)
 	v.Set("defaults.transport.limit", 250)
 	v.Set("defaults.include_meta", false)
+	v.Set("defaults.outputs_of", []string{"*"})
+	v.Set("defaults.inputs_of", []string{"sink.default"})
+	v.Set("defaults.local_filters", []string{"+component.kind:sink"})
 	v.Set("sources", []map[string]any{
 		{"name": "eu", "type": "kubernetes"},
 	})
@@ -39,6 +42,9 @@ func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	require.Equal(t, 750, cfg.Interval)
 	require.Equal(t, 250, cfg.Limit)
 	require.False(t, cfg.IncludeMeta)
+	require.Equal(t, []string{"*"}, cfg.OutputsOf)
+	require.Equal(t, []string{"sink.default"}, cfg.InputsOf)
+	require.Equal(t, []string{"sink"}, cfg.LocalFilters.ComponentKind.IncludeGlob)
 }
 
 func TestTapConfigFromViperCLIOverridesDefaults(t *testing.T) {
@@ -93,6 +99,12 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 			"type":         "kubernetes",
 			"format":       "text",
 			"include_meta": false,
+			"outputs_of":   []string{"kube-only-*"},
+			"inputs_of":    []string{"sink-a"},
+			"local_filters": []string{
+				"+component.kind:sink",
+				"-component.kind:source",
+			},
 			"transport": map[string]any{
 				"vector_port": 9777,
 				"interval":    750,
@@ -118,6 +130,11 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 	require.Equal(t, 9777, sources[0].VectorPort)
 	require.Equal(t, 750, sources[0].Interval)
 	require.Equal(t, 250, sources[0].Limit)
+	require.Equal(t, []string{"kube-only-*"}, sources[0].OutputsOf)
+	require.Equal(t, []string{"sink-a"}, sources[0].InputsOf)
+	require.Equal(t, []string{"sink"}, sources[0].LocalFilters.ComponentKind.IncludeGlob)
+	require.Equal(t, []string{"source"}, sources[0].LocalFilters.ComponentKind.ExcludeGlob)
+	require.True(t, sources[0].ApplyDefaults)
 
 	require.Equal(t, "direct-a", sources[1].Name)
 	require.Equal(t, runconfig.FormatJSON, sources[1].Format)
@@ -125,6 +142,61 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 	require.Equal(t, []string{"http://10.0.0.2:8686/graphql"}, sources[1].DirectURLs)
 	require.Equal(t, 500, sources[1].Interval)
 	require.Equal(t, 100, sources[1].Limit)
+	require.True(t, sources[1].ApplyDefaults)
+}
+
+func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
+	v := viper.New()
+	defs := defaultsFile{}
+	defs.Type = runconfig.SourceTypeDirect
+	defs.DirectURL = runconfig.DefaultDirectURL
+	defs.Discovery.Namespace = runconfig.DefaultNamespace
+	defs.Discovery.Selector = runconfig.DefaultSelector
+	defs.Transport.VectorPort = ptr.To(runconfig.DefaultVectorPort)
+	defs.Transport.Interval = ptr.To(runconfig.DefaultTapInterval)
+	defs.Transport.Limit = ptr.To(runconfig.DefaultTapLimit)
+
+	v.Set("sources", []map[string]any{
+		{
+			"name":           "src-a",
+			"type":           "direct",
+			"apply_defaults": false,
+			"outputs_of":     []string{"src-a-out"},
+			"inputs_of":      []string{"src-a-in"},
+			"local_filters":  []string{"+component.type:aws_*"},
+		},
+	})
+
+	sources, err := loadSourceConfigs(defs, v, runconfig.FormatText, true)
+	require.NoError(t, err)
+	require.Len(t, sources, 1)
+	require.False(t, sources[0].ApplyDefaults)
+	require.Equal(t, []string{"src-a-out"}, sources[0].OutputsOf)
+	require.Equal(t, []string{"src-a-in"}, sources[0].InputsOf)
+	require.Equal(t, []string{"aws_*"}, sources[0].LocalFilters.ComponentType.IncludeGlob)
+}
+
+func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
+	v := viper.New()
+	defs := defaultsFile{}
+	defs.Type = runconfig.SourceTypeDirect
+	defs.DirectURL = runconfig.DefaultDirectURL
+	defs.Discovery.Namespace = runconfig.DefaultNamespace
+	defs.Discovery.Selector = runconfig.DefaultSelector
+	defs.Transport.VectorPort = ptr.To(runconfig.DefaultVectorPort)
+	defs.Transport.Interval = ptr.To(runconfig.DefaultTapInterval)
+	defs.Transport.Limit = ptr.To(runconfig.DefaultTapLimit)
+
+	v.Set("sources", []map[string]any{
+		{
+			"name":          "src-a",
+			"type":          "direct",
+			"local_filters": []string{"+unknown.field:x"},
+		},
+	})
+
+	_, err := loadSourceConfigs(defs, v, runconfig.FormatText, true)
+	require.EqualError(t, err, `source "src-a": invalid local-filter "+unknown.field:x": unsupported field "unknown.field"`)
 }
 
 func TestResolveHelpersUseDefaultsWhenNoCLIConfigEnv(t *testing.T) {

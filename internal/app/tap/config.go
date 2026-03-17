@@ -9,13 +9,17 @@ import (
 
 type Config struct {
 	runconfig.BaseConfig
-	Sources      []SourceConfig
-	OutputsOf    []string
-	InputsOf     []string
+	Sources []SourceConfig
+	TapScopeConfig
 	LocalFilters LocalFilters
 	NoColor      bool
-	Interval     int
-	Limit        int
+}
+
+type TapScopeConfig struct {
+	OutputsOf []string
+	InputsOf  []string
+	Interval  int
+	Limit     int
 }
 
 type LocalFilters struct {
@@ -37,8 +41,9 @@ type LocalFilterRules struct {
 
 type SourceConfig struct {
 	runconfig.BaseSourceConfig
-	Interval int
-	Limit    int
+	TapScopeConfig
+	LocalFilters  LocalFilters
+	ApplyDefaults bool
 }
 
 func (c Config) Validate() error {
@@ -65,6 +70,9 @@ func (c Config) Validate() error {
 func (s SourceConfig) Validate() error {
 	if err := s.BaseSourceConfig.Validate(); err != nil {
 		return err
+	}
+	if err := s.LocalFilters.Validate(); err != nil {
+		return fmt.Errorf("source %q: %w", s.Name, err)
 	}
 	if err := runconfig.ValidatePositive(s.Name, "interval", s.Interval); err != nil {
 		return err
