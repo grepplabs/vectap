@@ -147,6 +147,11 @@ func applyViperToFlagSet(v *viper.Viper, fs *pflag.FlagSet) {
 				log.Fatalf("unable to set flag %q from viper: %v", f.Name, err)
 			}
 			return
+		case "duration":
+			if err := fs.Set(f.Name, v.GetDuration(f.Name).String()); err != nil {
+				log.Fatalf("unable to set flag %q from viper: %v", f.Name, err)
+			}
+			return
 		}
 
 		if err := fs.Set(f.Name, fmt.Sprint(v.Get(f.Name))); err != nil {

@@ -2,6 +2,7 @@ package tap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -39,6 +40,7 @@ var (
 		return forward.NewManagerFromConfig(kubeConfigPath, kubeContext)
 	}
 	kubernetesReconcileInterval = time.Second
+	errTapDurationElapsed       = errors.New("tap duration elapsed")
 )
 
 type eventFilter struct {
@@ -60,6 +62,12 @@ func (r *Runner) Tap(ctx context.Context, cfg Config) error {
 
 // nolint:cyclop
 func (r *Runner) runTap(ctx context.Context, cfg Config) error {
+	if cfg.Duration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, cfg.Duration, errTapDurationElapsed)
+		defer cancel()
+	}
+
 	runCfgs, err := expandRunConfigs(cfg)
 	if err != nil {
 		return err
@@ -80,6 +88,9 @@ func (r *Runner) runTap(ctx context.Context, cfg Config) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), errTapDurationElapsed) {
+				return nil
+			}
 			return ctx.Err()
 		case err := <-mux.Errors():
 			if err != nil {

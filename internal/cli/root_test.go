@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	components "github.com/grepplabs/vectap/internal/app/components"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
@@ -92,6 +93,7 @@ func TestTapDefaults(t *testing.T) {
 	require.Equal(t, 8686, cfg.VectorPort)
 	require.Equal(t, 500, cfg.Interval)
 	require.Equal(t, 100, cfg.Limit)
+	require.Zero(t, cfg.Duration)
 	require.False(t, cfg.NoColor)
 	require.True(t, cfg.IncludeMeta)
 	require.Empty(t, cfg.OutputsOf)
@@ -100,7 +102,7 @@ func TestTapDefaults(t *testing.T) {
 }
 
 func TestTapExplicitFlags(t *testing.T) {
-	cfg := runTapCommand(t, "tap", "--type", "kubernetes", "--direct-url", "http://127.0.0.1:9999/graphql", "-n", "obs", "-l", "app=vector,role=agg", "--kubeconfig", "/tmp/kubeconfig", "--context", "kind-dev", "--outputs-of", "a, b", "--inputs-of", "x, y", "--local-filter", "+component.type:prometheus_*", "--local-filter", "-component.type:console", "--local-filter", "+re:component.type:^aws_.*$", "--local-filter", "-re:component.type:^console$", "--local-filter", "+component.kind:sink", "--local-filter", "-component.kind:source", "--local-filter", "+re:component.kind:^sink$", "--local-filter", "-re:component.kind:^source$", "--local-filter", "+name:component_*", "--local-filter", "-name:adaptive_*", "--local-filter", "+re:name:^component_.*", "--local-filter", "-re:name:^adaptive_.*", "--local-filter", "+tags.component_id:destination-*", "--local-filter", "-tags.component_id:debug-*", "--local-filter", "+re:tags.component_id:^dest-.*$", "--local-filter", "-re:tags.component_id:^prom_.*$", "--local-filter", "+tags.component_kind:sink", "--local-filter", "-tags.component_kind:source", "--local-filter", "+re:tags.component_kind:^sink$", "--local-filter", "-re:tags.component_kind:^source$", "--local-filter", "+tags.component_type:aws_*", "--local-filter", "-tags.component_type:console", "--local-filter", "+re:tags.component_type:^aws_.*$", "--local-filter", "-re:tags.component_type:^console$", "--local-filter", "+tags.host:vector-*", "--local-filter", "-tags.host:vector-9", "--local-filter", "+re:tags.host:^vector-[0-9]+$", "--local-filter", "-re:tags.host:^vector-9$", "--format", "json", "--no-color", "--vector-port", "9999", "--interval", "750", "--limit", "250", "--include-meta")
+	cfg := runTapCommand(t, "tap", "--type", "kubernetes", "--direct-url", "http://127.0.0.1:9999/graphql", "-n", "obs", "-l", "app=vector,role=agg", "--kubeconfig", "/tmp/kubeconfig", "--context", "kind-dev", "--outputs-of", "a, b", "--inputs-of", "x, y", "--local-filter", "+component.type:prometheus_*", "--local-filter", "-component.type:console", "--local-filter", "+re:component.type:^aws_.*$", "--local-filter", "-re:component.type:^console$", "--local-filter", "+component.kind:sink", "--local-filter", "-component.kind:source", "--local-filter", "+re:component.kind:^sink$", "--local-filter", "-re:component.kind:^source$", "--local-filter", "+name:component_*", "--local-filter", "-name:adaptive_*", "--local-filter", "+re:name:^component_.*", "--local-filter", "-re:name:^adaptive_.*", "--local-filter", "+tags.component_id:destination-*", "--local-filter", "-tags.component_id:debug-*", "--local-filter", "+re:tags.component_id:^dest-.*$", "--local-filter", "-re:tags.component_id:^prom_.*$", "--local-filter", "+tags.component_kind:sink", "--local-filter", "-tags.component_kind:source", "--local-filter", "+re:tags.component_kind:^sink$", "--local-filter", "-re:tags.component_kind:^source$", "--local-filter", "+tags.component_type:aws_*", "--local-filter", "-tags.component_type:console", "--local-filter", "+re:tags.component_type:^aws_.*$", "--local-filter", "-re:tags.component_type:^console$", "--local-filter", "+tags.host:vector-*", "--local-filter", "-tags.host:vector-9", "--local-filter", "+re:tags.host:^vector-[0-9]+$", "--local-filter", "-re:tags.host:^vector-9$", "--format", "json", "--no-color", "--vector-port", "9999", "--interval", "750", "--limit", "250", "--duration", "45s", "--include-meta")
 
 	require.Equal(t, "obs", cfg.Namespace)
 	require.Equal(t, "app=vector,role=agg", cfg.LabelSelector)
@@ -122,6 +124,7 @@ func TestTapExplicitFlags(t *testing.T) {
 	require.Equal(t, 9999, cfg.VectorPort)
 	require.Equal(t, 750, cfg.Interval)
 	require.Equal(t, 250, cfg.Limit)
+	require.Equal(t, 45*time.Second, cfg.Duration)
 	require.True(t, cfg.IncludeMeta)
 }
 
@@ -179,6 +182,7 @@ func TestTapEnvironmentBindings(t *testing.T) {
 	t.Setenv("VECTAP_VECTOR_PORT", "7777")
 	t.Setenv("VECTAP_INTERVAL", "650")
 	t.Setenv("VECTAP_LIMIT", "150")
+	t.Setenv("VECTAP_DURATION", "2m30s")
 	t.Setenv("VECTAP_NO_COLOR", "true")
 	t.Setenv("VECTAP_LOCAL_FILTER", "+component.type:prometheus_*,-component.type:console,+re:component.type:^aws_.*$,-re:component.type:^console$,+component.kind:sink,-component.kind:source,+re:component.kind:^sink$,-re:component.kind:^source$,+name:component_*,-name:adaptive_*,+re:name:^component_.*,-re:name:^adaptive_.*,+tags.component_id:destination-*,-tags.component_id:debug-*,+re:tags.component_id:^dest-.*$,-re:tags.component_id:^prom_.*$,+tags.component_kind:sink,-tags.component_kind:source,+re:tags.component_kind:^sink$,-re:tags.component_kind:^source$,+tags.component_type:aws_*,-tags.component_type:console,+re:tags.component_type:^aws_.*$,-re:tags.component_type:^console$,+tags.host:vector-*,-tags.host:vector-9,+re:tags.host:^vector-[0-9]+$,-re:tags.host:^vector-9$")
 
@@ -192,6 +196,7 @@ func TestTapEnvironmentBindings(t *testing.T) {
 	require.Equal(t, 7777, cfg.VectorPort)
 	require.Equal(t, 650, cfg.Interval)
 	require.Equal(t, 150, cfg.Limit)
+	require.Equal(t, 150*time.Second, cfg.Duration)
 	require.True(t, cfg.NoColor)
 	requireTapLocalFilters(t, cfg.LocalFilters)
 }
@@ -201,12 +206,14 @@ func TestTapFlagOverridesEnvironment(t *testing.T) {
 	t.Setenv("VECTAP_VECTOR_PORT", "7777")
 	t.Setenv("VECTAP_INTERVAL", "650")
 	t.Setenv("VECTAP_LIMIT", "150")
+	t.Setenv("VECTAP_DURATION", "2m30s")
 
-	cfg := runTapCommand(t, "tap", "--namespace", "flag-ns", "--vector-port", "8888", "--interval", "700", "--limit", "200")
+	cfg := runTapCommand(t, "tap", "--namespace", "flag-ns", "--vector-port", "8888", "--interval", "700", "--limit", "200", "--duration", "30s")
 	require.Equal(t, "flag-ns", cfg.Namespace)
 	require.Equal(t, 8888, cfg.VectorPort)
 	require.Equal(t, 700, cfg.Interval)
 	require.Equal(t, 200, cfg.Limit)
+	require.Equal(t, 30*time.Second, cfg.Duration)
 }
 
 func TestTapRepeatableFlagsAccumulate(t *testing.T) {
@@ -260,6 +267,7 @@ defaults:
     vector_port: 8686
     interval: 500
     limit: 100
+duration: 1m
 sources:
   - name: local-direct
     type: direct
@@ -300,6 +308,7 @@ sources:
 	require.Equal(t, 750, cfg.Sources[1].Interval)
 	require.Equal(t, 250, cfg.Sources[1].Limit)
 	require.Equal(t, "json", cfg.Sources[1].Format)
+	require.Equal(t, time.Minute, cfg.Duration)
 }
 
 func TestTapAllSourcesFlag(t *testing.T) {

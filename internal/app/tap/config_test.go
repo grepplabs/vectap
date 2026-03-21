@@ -2,6 +2,7 @@ package tap
 
 import (
 	"testing"
+	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/stretchr/testify/require"
@@ -37,6 +38,7 @@ func TestConfigValidateSuccess(t *testing.T) {
 			Format:     format,
 			VectorPort: runconfig.DefaultVectorPort,
 		}, runconfig.DefaultTapInterval, runconfig.DefaultTapLimit)
+		cfg.Duration = time.Second
 		require.NoError(t, cfg.Validate())
 	}
 }
@@ -113,6 +115,20 @@ func TestConfigValidateErrors(t *testing.T) {
 				Format:     runconfig.FormatText,
 				VectorPort: runconfig.DefaultVectorPort,
 			}, runconfig.DefaultTapInterval, 0),
+		},
+		{
+			name: "invalid duration",
+			cfg: func() Config {
+				cfg := tapConfig(runconfig.BaseConfig{
+					Type:       runconfig.SourceTypeDirect,
+					DirectURLs: []string{runconfig.DefaultDirectURL},
+					Namespace:  runconfig.DefaultNamespace,
+					Format:     runconfig.FormatText,
+					VectorPort: runconfig.DefaultVectorPort,
+				}, runconfig.DefaultTapInterval, runconfig.DefaultTapLimit)
+				cfg.Duration = -time.Second
+				return cfg
+			}(),
 		},
 		{
 			name: "source without name",

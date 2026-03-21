@@ -1,8 +1,10 @@
 package tap
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 )
@@ -20,6 +22,7 @@ type TapScopeConfig struct {
 	InputsOf  []string
 	Interval  int
 	Limit     int
+	Duration  time.Duration
 }
 
 type LocalFilters struct {
@@ -55,6 +58,9 @@ func (c Config) Validate() error {
 	}
 	if err := runconfig.ValidatePositive("", "limit", c.Limit); err != nil {
 		return err
+	}
+	if c.Duration < 0 {
+		return errors.New("duration must be greater than or equal to 0")
 	}
 	for _, s := range c.Sources {
 		if err := s.Validate(); err != nil {
