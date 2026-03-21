@@ -2,11 +2,11 @@ package tap
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/grepplabs/vectap/internal/filter"
@@ -22,6 +22,24 @@ import (
 type Runner struct {
 	client vectorapi.Client
 }
+
+type kubeTargetObserver interface {
+	Observe(ctx context.Context, opts targets.ResolveOptions) (<-chan []targets.Target, <-chan error)
+}
+
+type kubeTargetRuntime struct {
+	cancel context.CancelFunc
+}
+
+var (
+	newKubeResolverFromConfig = func(kubeConfigPath, kubeContext string) (kubeTargetObserver, error) {
+		return kube.NewResolverFromConfig(kubeConfigPath, kubeContext)
+	}
+	newForwardManagerFromConfig = func(kubeConfigPath, kubeContext string) (forward.Manager, error) {
+		return forward.NewManagerFromConfig(kubeConfigPath, kubeContext)
+	}
+	kubernetesReconcileInterval = time.Second
+)
 
 type eventFilter struct {
 	componentType *filter.ValueMatcher
@@ -101,7 +119,7 @@ func (r *Runner) addSourceStreams(ctx context.Context, cfg Config, mux *stream.M
 func (r *Runner) addDirectSourceStreams(ctx context.Context, cfg Config, mux *stream.Mux) error {
 	for i, endpointURL := range cfg.DirectURLs {
 		target := directTarget(i, endpointURL)
-		if err := r.addTapStream(ctx, cfg, mux, endpointURL, target); err != nil {
+		if _, err := r.addTapStream(ctx, cfg, mux, endpointURL, target); err != nil {
 			return err
 		}
 	}
@@ -109,50 +127,157 @@ func (r *Runner) addDirectSourceStreams(ctx context.Context, cfg Config, mux *st
 }
 
 func (r *Runner) addKubernetesSourceStreams(ctx context.Context, cfg Config, mux *stream.Mux) error {
-	resolver, err := kube.NewResolverFromConfig(cfg.KubeConfigPath, cfg.KubeContext)
+	if _, err := newEventFilter(cfg.LocalFilters); err != nil {
+		return err
+	}
+
+	resolver, err := newKubeResolverFromConfig(cfg.KubeConfigPath, cfg.KubeContext)
 	if err != nil {
 		return err
 	}
 
-	fwd, err := forward.NewManagerFromConfig(cfg.KubeConfigPath, cfg.KubeContext)
+	fwd, err := newForwardManagerFromConfig(cfg.KubeConfigPath, cfg.KubeContext)
 	if err != nil {
 		return err
 	}
 
-	ts, err := resolver.Resolve(ctx, targets.ResolveOptions{
+	snapshots, observeErrs := resolver.Observe(ctx, targets.ResolveOptions{
 		Namespace:     cfg.Namespace,
 		LabelSelector: cfg.LabelSelector,
 		RemotePort:    cfg.VectorPort,
 	})
-	if err != nil {
-		return err
-	}
-	if len(ts) == 0 {
-		return errors.New("no matching targets found")
-	}
 
-	for _, target := range ts {
-		session, err := fwd.Start(ctx, target)
-		if err != nil {
-			return fmt.Errorf("start port-forward for %s: %w", target.ID, err)
-		}
-		if err := r.addTapStream(ctx, cfg, mux, session.EndpointURL, target); err != nil {
-			return err
-		}
-	}
+	keepAliveEvents := make(chan output.Event)
+	runtimeErrs := make(chan error, 16)
+	mux.Add(cfg.SourceName+"/kubernetes", keepAliveEvents, runtimeErrs)
+	close(keepAliveEvents)
+
+	go r.runKubernetesSource(ctx, cfg, mux, fwd, snapshots, observeErrs, runtimeErrs)
 
 	return nil
 }
 
-func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) error {
+//nolint:cyclop
+func (r *Runner) runKubernetesSource(
+	ctx context.Context,
+	cfg Config,
+	mux *stream.Mux,
+	fwd forward.Manager,
+	snapshots <-chan []targets.Target,
+	observeErrs <-chan error,
+	runtimeErrs chan<- error,
+) {
+	defer close(runtimeErrs)
+
+	active := make(map[string]kubeTargetRuntime)
+	desired := make(map[string]targets.Target)
+	finishedTargets := make(chan string, 64)
+	reconcileTicker := time.NewTicker(kubernetesReconcileInterval)
+	defer reconcileTicker.Stop()
+
+	defer func() {
+		for _, runtime := range active {
+			runtime.cancel()
+		}
+	}()
+
+	for snapshots != nil || observeErrs != nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-reconcileTicker.C:
+			r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+		case targetID := <-finishedTargets:
+			if _, ok := active[targetID]; ok {
+				delete(active, targetID)
+				r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+			}
+		case err, ok := <-observeErrs:
+			if !ok {
+				observeErrs = nil
+				continue
+			}
+			sendAsyncError(runtimeErrs, err)
+		case ts, ok := <-snapshots:
+			if !ok {
+				snapshots = nil
+				continue
+			}
+			desired = make(map[string]targets.Target, len(ts))
+			for _, target := range ts {
+				desired[target.ID] = target
+			}
+			r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+		}
+	}
+}
+
+func (r *Runner) reconcileTapTargets(
+	ctx context.Context,
+	cfg Config,
+	mux *stream.Mux,
+	fwd forward.Manager,
+	active map[string]kubeTargetRuntime,
+	desired map[string]targets.Target,
+	runtimeErrs chan<- error,
+	finishedTargets chan<- string,
+) {
+	for id, runtime := range active {
+		if _, ok := desired[id]; ok {
+			continue
+		}
+		runtime.cancel()
+		delete(active, id)
+	}
+
+	for _, target := range desired {
+		if _, ok := active[target.ID]; ok {
+			continue
+		}
+
+		targetCtx, cancel := context.WithCancel(ctx)
+		session, err := fwd.Start(targetCtx, target)
+		if err != nil {
+			cancel()
+			sendAsyncError(runtimeErrs, fmt.Errorf("start port-forward for %s: %w", target.ID, err))
+			continue
+		}
+		tapDone, err := r.addTapStream(targetCtx, cfg, mux, session.EndpointURL, target)
+		if err != nil {
+			cancel()
+			sendAsyncError(runtimeErrs, err)
+			continue
+		}
+		active[target.ID] = kubeTargetRuntime{cancel: cancel}
+
+		go func(targetID string, streamDone <-chan struct{}, streamCtx context.Context) {
+			<-streamDone
+			if streamCtx.Err() != nil {
+				return
+			}
+			select {
+			case finishedTargets <- targetID:
+			default:
+			}
+		}(target.ID, tapDone, targetCtx)
+	}
+}
+
+func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) (<-chan struct{}, error) {
 	evFilter, err := newEventFilter(cfg.LocalFilters)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	events, errs := r.client.Tap(ctx, endpointURL, newTapRequest(cfg, target))
 	outCh := make(chan output.Event)
+	outErrs := make(chan error)
+	streamDone := make(chan struct{})
+	doneEvents := make(chan struct{})
+	doneErrs := make(chan struct{})
+
 	go func() {
 		defer close(outCh)
+		defer close(doneEvents)
 		for ev := range events {
 			out := withSourcePrefix(ev.ToOutput(target), cfg.SourceName)
 			if evFilter.Allow(out) {
@@ -160,8 +285,30 @@ func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, 
 			}
 		}
 	}()
-	mux.Add(target.ID, outCh, errs)
-	return nil
+	go func() {
+		defer close(outErrs)
+		defer close(doneErrs)
+		for err := range errs {
+			outErrs <- err
+		}
+	}()
+	go func() {
+		defer close(streamDone)
+		<-doneEvents
+		<-doneErrs
+	}()
+	mux.Add(target.ID, outCh, outErrs)
+	return streamDone, nil
+}
+
+func sendAsyncError(errCh chan<- error, err error) {
+	if err == nil {
+		return
+	}
+	select {
+	case errCh <- err:
+	default:
+	}
 }
 
 func newTapRequest(cfg Config, target targets.Target) vectorapi.TapRequest {
