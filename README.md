@@ -52,6 +52,7 @@ go run ./cmd/vectap version
 ```bash
 vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql
 vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --format json
+vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --duration 30s
 ```
 
 ### Kubernetes discovery
@@ -60,6 +61,7 @@ vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --format jso
 vectap tap --type kubernetes -n observability -l app=vector
 vectap tap --type kubernetes -n observability -l app=vector --outputs-of source.my_logs
 vectap tap --type kubernetes -n observability --kubeconfig ~/.kube/config --context kind-dev
+vectap tap --type kubernetes -n observability -l app=vector --duration 2m
 ```
 
 ### Config file
@@ -77,6 +79,7 @@ defaults:
     selector: app.kubernetes.io/name=vector
   transport:
     vector_port: 8686
+duration: 30s
 sources:
   - name: eu-prod
     type: kubernetes
@@ -111,6 +114,23 @@ vectap --config vectap.yaml tap --source eu-prod --source local
 ```
 
 ## Filtering
+
+## Sampling controls
+
+`vectap tap` uses:
+
+- `--interval` to set the server-side sampling interval in milliseconds
+- `--limit` to set the maximum number of events per interval
+- `-d, --duration` to stop the whole tap session automatically after a Go duration such as `30s`, `5m`, or `1h15m`
+
+`duration` is global only. It applies once at the start of the tap operation, wraps the input context for the whole session, and is shared by all configured sources. Source configs do not override it.
+
+Examples:
+
+```bash
+vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --interval 500 --limit 100 --duration 45s
+vectap tap --type kubernetes -n observability -l app=vector --outputs-of source.my_logs --duration 2m30s
+```
 
 ### Match reference
 
@@ -255,10 +275,11 @@ vectap version
 
 Configuration is wired through Cobra + Viper and also supports `VECTAP_` environment variables
 for all tap flags (for example `VECTAP_NAMESPACE`, `VECTAP_SELECTOR`, and
-`VECTAP_INCLUDE_META`).
+`VECTAP_INCLUDE_META`, `VECTAP_INTERVAL`, `VECTAP_LIMIT`, and `VECTAP_DURATION`).
 
 ```bash
 VECTAP_TYPE=kubernetes VECTAP_NAMESPACE=observability VECTAP_SELECTOR=app=vector vectap tap
+VECTAP_DURATION=90s vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql
 ```
 
 ## Real-world example

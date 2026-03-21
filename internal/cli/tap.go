@@ -41,6 +41,7 @@ func newTapCmd(v *viper.Viper, newRunner newRunnerFunc) *cobra.Command {
 	cmd.Flags().Int("vector-port", runconfig.DefaultVectorPort, "vector API port")
 	cmd.Flags().Int("interval", runconfig.DefaultTapInterval, "sampling interval in milliseconds")
 	cmd.Flags().Int("limit", runconfig.DefaultTapLimit, "maximum number of events per interval")
+	cmd.Flags().DurationP("duration", "d", 0, "sampling duration in Go format (for example 30s, 5m, 1h15m); exits automatically when elapsed")
 	cmd.Flags().Bool("include-meta", runconfig.DefaultIncludeMeta, "include metadata in output")
 
 	return cmd

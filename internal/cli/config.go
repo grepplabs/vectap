@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	components "github.com/grepplabs/vectap/internal/app/components"
 	"github.com/grepplabs/vectap/internal/app/runconfig"
@@ -50,6 +51,7 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 			InputsOf:  resolveStringSliceList(v, cliFlagSet, "inputs-of", defs.InputsOf),
 			Interval:  resolveInt(v, cliFlagSet, "interval", defs.Transport.Interval),
 			Limit:     resolveInt(v, cliFlagSet, "limit", defs.Transport.Limit),
+			Duration:  resolveDuration(v, cliFlagSet, "duration", ""),
 		},
 		LocalFilters: tap.LocalFilters{},
 		NoColor:      v.GetBool("no-color"),
@@ -332,6 +334,53 @@ func resolveBool(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaults
 		return *defaultsValue
 	}
 	return v.GetBool(key)
+}
+
+func resolveDuration(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue string) time.Duration {
+	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
+		d, err := parseDurationValue(v.Get(key))
+		if err == nil {
+			return d
+		}
+		return 0
+	}
+	if defaultsValue != "" {
+		d, err := parseDurationString(defaultsValue)
+		if err == nil {
+			return d
+		}
+		return 0
+	}
+	d, err := parseDurationValue(v.Get(key))
+	if err == nil {
+		return d
+	}
+	return 0
+}
+
+func parseDurationValue(value any) (time.Duration, error) {
+	switch v := value.(type) {
+	case nil:
+		return 0, nil
+	case time.Duration:
+		return v, nil
+	case string:
+		return parseDurationString(v)
+	default:
+		return time.ParseDuration(fmt.Sprint(value))
+	}
+}
+
+func parseDurationString(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: %w", value, err)
+	}
+	return d, nil
 }
 
 func envSetForKey(key string) bool {

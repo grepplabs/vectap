@@ -98,6 +98,31 @@ func TestFormatForRender(t *testing.T) {
 	})
 }
 
+func TestRunTapExitsCleanlyAfterDuration(t *testing.T) {
+	client := &fakeTapClient{
+		eventsByEndpoint: map[string][]vectorapi.TapEvent{
+			runconfig.DefaultDirectURL: nil,
+		},
+	}
+	r := &Runner{client: client}
+
+	cfg := testTapConfig(runconfig.BaseConfig{
+		Type:       runconfig.SourceTypeDirect,
+		DirectURLs: []string{runconfig.DefaultDirectURL},
+		Namespace:  runconfig.DefaultNamespace,
+		Format:     runconfig.FormatText,
+		VectorPort: runconfig.DefaultVectorPort,
+	})
+	cfg.Interval = runconfig.DefaultTapInterval
+	cfg.Limit = runconfig.DefaultTapLimit
+	cfg.Duration = 20 * time.Millisecond
+
+	start := time.Now()
+	err := r.runTap(t.Context(), cfg)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, time.Since(start), 15*time.Millisecond)
+}
+
 func TestExpandRunConfigsSourceDefaultsApplied(t *testing.T) {
 	cfg := testTapConfig(
 		runconfig.BaseConfig{
@@ -184,6 +209,39 @@ func TestExpandRunConfigsSourceDefaultsDisabled(t *testing.T) {
 	require.Equal(t, []string{"source-in"}, runCfgs[0].InputsOf)
 	require.Empty(t, runCfgs[0].LocalFilters.ComponentKind.IncludeGlob)
 	require.Equal(t, []string{"aws_*"}, runCfgs[0].LocalFilters.ComponentType.IncludeGlob)
+}
+
+func TestExpandRunConfigsPreservesGlobalDuration(t *testing.T) {
+	cfg := testTapConfig(
+		runconfig.BaseConfig{
+			AllSources: true,
+		},
+		func(c *Config) {
+			c.Duration = time.Minute
+			c.Sources = []SourceConfig{
+				{
+					BaseSourceConfig: runconfig.BaseSourceConfig{
+						Name:       "src-a",
+						Type:       runconfig.SourceTypeDirect,
+						Enabled:    true,
+						DirectURLs: []string{runconfig.DefaultDirectURL},
+						Format:     runconfig.FormatText,
+						Namespace:  runconfig.DefaultNamespace,
+						VectorPort: runconfig.DefaultVectorPort,
+					},
+					TapScopeConfig: TapScopeConfig{
+						Interval: runconfig.DefaultTapInterval,
+						Limit:    runconfig.DefaultTapLimit,
+					},
+				},
+			}
+		},
+	)
+
+	runCfgs, err := expandRunConfigs(cfg)
+	require.NoError(t, err)
+	require.Len(t, runCfgs, 1)
+	require.Equal(t, time.Minute, runCfgs[0].Duration)
 }
 
 func TestAddKubernetesSourceStreamsReconcilesDynamicTargets(t *testing.T) {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"testing"
+	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/grepplabs/vectap/internal/ptr"
@@ -21,6 +22,7 @@ func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	v.Set("defaults.transport.vector_port", 9777)
 	v.Set("defaults.transport.interval", 750)
 	v.Set("defaults.transport.limit", 250)
+	v.Set("duration", "45s")
 	v.Set("defaults.include_meta", false)
 	v.Set("defaults.outputs_of", []string{"*"})
 	v.Set("defaults.inputs_of", []string{"sink.default"})
@@ -41,6 +43,7 @@ func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	require.Equal(t, 9777, cfg.VectorPort)
 	require.Equal(t, 750, cfg.Interval)
 	require.Equal(t, 250, cfg.Limit)
+	require.Equal(t, 45*time.Second, cfg.Duration)
 	require.False(t, cfg.IncludeMeta)
 	require.Equal(t, []string{"*"}, cfg.OutputsOf)
 	require.Equal(t, []string{"sink.default"}, cfg.InputsOf)
@@ -62,10 +65,11 @@ func TestTapConfigFromViperCLIOverridesDefaults(t *testing.T) {
 	v.Set("vector-port", 8686)
 	v.Set("interval", 500)
 	v.Set("limit", 100)
+	v.Set("duration", "30s")
 
 	flagSet := func(name string) bool {
 		switch name {
-		case "format", "include-meta", "vector-port", "interval", "limit":
+		case "format", "include-meta", "vector-port", "interval", "limit", "duration":
 			return true
 		default:
 			return false
@@ -79,6 +83,7 @@ func TestTapConfigFromViperCLIOverridesDefaults(t *testing.T) {
 	require.Equal(t, 8686, cfg.VectorPort)
 	require.Equal(t, 500, cfg.Interval)
 	require.Equal(t, 100, cfg.Limit)
+	require.Equal(t, 30*time.Second, cfg.Duration)
 }
 
 func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
@@ -208,6 +213,7 @@ func TestResolveHelpersUseDefaultsWhenNoCLIConfigEnv(t *testing.T) {
 	require.Equal(t, 9999, resolveInt(v, none, "vector-port", ptr.To(9999)))
 	require.Equal(t, 500, resolveInt(v, none, "interval", ptr.To(500)))
 	require.Equal(t, 100, resolveInt(v, none, "limit", ptr.To(100)))
+	require.Equal(t, 30*time.Second, resolveDuration(v, none, "duration", "30s"))
 	require.True(t, resolveBool(v, none, "include-meta", ptr.To(true)))
 }
 
