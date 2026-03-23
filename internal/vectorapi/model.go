@@ -23,6 +23,32 @@ type Component struct {
 	ComponentType string `json:"component_type"`
 }
 
+//nolint:tagliatelle
+type TopologyComponentRef struct {
+	ComponentID   string `json:"component_id"`
+	ComponentType string `json:"component_type"`
+}
+
+//nolint:tagliatelle
+type TopologyOutput struct {
+	OutputID string `json:"output_id"`
+}
+
+//nolint:tagliatelle
+type TopologyComponent struct {
+	ComponentID         string                 `json:"component_id"`
+	ComponentKind       string                 `json:"component_kind"`
+	ComponentType       string                 `json:"component_type"`
+	ReceivedBytesTotal  *float64               `json:"received_bytes_total,omitempty"`
+	SentBytesTotal      *float64               `json:"sent_bytes_total,omitempty"`
+	ReceivedEventsTotal *float64               `json:"received_events_total,omitempty"`
+	SentEventsTotal     *float64               `json:"sent_events_total,omitempty"`
+	Sources             []TopologyComponentRef `json:"sources,omitempty"`
+	Transforms          []TopologyComponentRef `json:"transforms,omitempty"`
+	Sinks               []TopologyComponentRef `json:"sinks,omitempty"`
+	Outputs             []TopologyOutput       `json:"outputs,omitempty"`
+}
+
 func (e TapEvent) ToOutput(t targets.Target) output.Event {
 	return output.Event{
 		TargetID:    t.ID,
