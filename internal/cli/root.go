@@ -11,6 +11,7 @@ import (
 
 	components "github.com/grepplabs/vectap/internal/app/components"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
+	topology "github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -19,6 +20,7 @@ import (
 type appRunner interface {
 	Tap(ctx context.Context, cfg tap.Config) error
 	Components(ctx context.Context, cfg components.Config) error
+	Topology(ctx context.Context, cfg topology.Config) error
 }
 
 type newRunnerFunc func() appRunner
@@ -43,12 +45,14 @@ func defaultRunner() appRunner {
 	return &defaultAppRunner{
 		tapRunner:        tap.NewDefaultRunner(),
 		componentsRunner: components.NewDefaultRunner(),
+		topologyRunner:   topology.NewDefaultRunner(),
 	}
 }
 
 type defaultAppRunner struct {
 	tapRunner        *tap.Runner
 	componentsRunner *components.Runner
+	topologyRunner   *topology.Runner
 }
 
 func (r *defaultAppRunner) Tap(ctx context.Context, cfg tap.Config) error {
@@ -57,6 +61,10 @@ func (r *defaultAppRunner) Tap(ctx context.Context, cfg tap.Config) error {
 
 func (r *defaultAppRunner) Components(ctx context.Context, cfg components.Config) error {
 	return r.componentsRunner.Components(ctx, cfg)
+}
+
+func (r *defaultAppRunner) Topology(ctx context.Context, cfg topology.Config) error {
+	return r.topologyRunner.Topology(ctx, cfg)
 }
 
 func newRootCmd(newRunner newRunnerFunc) *cobra.Command {
@@ -96,6 +104,7 @@ func newRootCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd.PersistentFlags().String("config", "", "path to config file")
 
 	cmd.AddCommand(newComponentsCmd(v, newRunner))
+	cmd.AddCommand(newTopologyCmd(v, newRunner))
 	cmd.AddCommand(newTapCmd(v, newRunner))
 	cmd.AddCommand(newVersionCmd())
 

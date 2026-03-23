@@ -17,7 +17,10 @@ type TapRequest struct {
 
 type ComponentsRequest struct{}
 
+type TopologyRequest struct{}
+
 type Client interface {
 	Tap(ctx context.Context, endpointURL string, req TapRequest) (<-chan TapEvent, <-chan error)
 	Components(ctx context.Context, endpointURL string, req ComponentsRequest) ([]Component, error)
+	Topology(ctx context.Context, endpointURL string, req TopologyRequest) ([]TopologyComponent, error)
 }

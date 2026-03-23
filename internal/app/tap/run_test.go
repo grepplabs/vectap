@@ -498,6 +498,10 @@ func (f *fakeTapClient) Components(context.Context, string, vectorapi.Components
 	return nil, nil
 }
 
+func (f *fakeTapClient) Topology(context.Context, string, vectorapi.TopologyRequest) ([]vectorapi.TopologyComponent, error) {
+	return nil, nil
+}
+
 type tapPlan struct {
 	events []vectorapi.TapEvent
 	errs   []error
@@ -534,6 +538,10 @@ func (f *fakeFlakyTapClient) Tap(_ context.Context, endpointURL string, _ vector
 }
 
 func (f *fakeFlakyTapClient) Components(context.Context, string, vectorapi.ComponentsRequest) ([]vectorapi.Component, error) {
+	return nil, nil
+}
+
+func (f *fakeFlakyTapClient) Topology(context.Context, string, vectorapi.TopologyRequest) ([]vectorapi.TopologyComponent, error) {
 	return nil, nil
 }
 

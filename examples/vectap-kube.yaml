@@ -1,0 +1,12 @@
+defaults:
+  type: kubernetes
+  cluster:
+    kubeconfig: ""
+    context: "tr-cons-d01"
+  discovery:
+    namespace: vector-k6
+    selector: app.kubernetes.io/name=vector,apps.kubernetes.io/pod-index=0
+  transport:
+    vector_port: 8686
+  include_meta: false
+  format: text

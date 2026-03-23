@@ -281,3 +281,64 @@ func TestGraphQLWSClientComponentsReturnsGraphQLError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "graphql query error: boom")
 }
+
+func TestGraphQLWSClientTopologyPaginatesAndAppliesFilters(t *testing.T) {
+	toPtr := func(v float64) *float64 { return &v }
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/graphql", r.URL.Path)
+
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+
+		var req struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		assert.NoError(t, json.Unmarshal(body, &req))
+		assert.Contains(t, req.Query, "query Topology")
+
+		callCount++
+		switch callCount {
+		case 1:
+			assert.Equal(t, float64(defaultComponentsPageSize), req.Variables["first"])
+			assert.Nil(t, req.Variables["after"])
+			_, _ = w.Write([]byte(`{"data":{"components":{"edges":[{"node":{"__typename":"Source","componentId":"src.in","componentType":"demo_logs","transforms":[{"componentId":"tr.parse","componentType":"remap"}],"sinks":[{"componentId":"sink.out","componentType":"console"}],"outputs":[{"outputId":"default"}],"metrics":{"receivedBytesTotal":{"receivedBytesTotal":1000},"receivedEventsTotal":{"receivedEventsTotal":10},"sentEventsTotal":{"sentEventsTotal":30}}}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}`))
+		case 2:
+			assert.Equal(t, "cursor-1", req.Variables["after"])
+			_, _ = w.Write([]byte(`{"data":{"components":{"edges":[{"node":{"__typename":"Sink","componentId":"sink.out","componentType":"console","sources":[{"componentId":"src.in","componentType":"demo_logs"}],"transforms":[{"componentId":"tr.parse","componentType":"remap"}],"metrics":{"receivedEventsTotal":{"receivedEventsTotal":28},"sentBytesTotal":{"sentBytesTotal":2048},"sentEventsTotal":{"sentEventsTotal":28}}}}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}`))
+		default:
+			t.Fatalf("unexpected extra request %d", callCount)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewGraphQLWSClient()
+	got, err := client.Topology(t.Context(), srv.URL+"/graphql", TopologyRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []TopologyComponent{
+		{
+			ComponentID:         "src.in",
+			ComponentKind:       "source",
+			ComponentType:       "demo_logs",
+			ReceivedBytesTotal:  toPtr(1000),
+			ReceivedEventsTotal: toPtr(10),
+			SentEventsTotal:     toPtr(30),
+			Transforms:          []TopologyComponentRef{{ComponentID: "tr.parse", ComponentType: "remap"}},
+			Sinks:               []TopologyComponentRef{{ComponentID: "sink.out", ComponentType: "console"}},
+			Outputs:             []TopologyOutput{{OutputID: "default"}},
+		},
+		{
+			ComponentID:         "sink.out",
+			ComponentKind:       "sink",
+			ComponentType:       "console",
+			SentBytesTotal:      toPtr(2048),
+			ReceivedEventsTotal: toPtr(28),
+			SentEventsTotal:     toPtr(28),
+			Sources:             []TopologyComponentRef{{ComponentID: "src.in", ComponentType: "demo_logs"}},
+			Transforms:          []TopologyComponentRef{{ComponentID: "tr.parse", ComponentType: "remap"}},
+		},
+	}, got)
+}

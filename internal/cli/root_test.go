@@ -9,12 +9,14 @@ import (
 
 	components "github.com/grepplabs/vectap/internal/app/components"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
+	topology "github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/stretchr/testify/require"
 )
 
 type captureRunner struct {
 	tapCfgs        []tap.Config
 	componentsCfgs []components.Config
+	topologyCfgs   []topology.Config
 }
 
 func (r *captureRunner) Tap(_ context.Context, cfg tap.Config) error {
@@ -24,6 +26,11 @@ func (r *captureRunner) Tap(_ context.Context, cfg tap.Config) error {
 
 func (r *captureRunner) Components(_ context.Context, cfg components.Config) error {
 	r.componentsCfgs = append(r.componentsCfgs, cfg)
+	return nil
+}
+
+func (r *captureRunner) Topology(_ context.Context, cfg topology.Config) error {
+	r.topologyCfgs = append(r.topologyCfgs, cfg)
 	return nil
 }
 
@@ -61,6 +68,27 @@ func runComponentsCommand(t *testing.T, args ...string) components.Config {
 	require.Zero(t, exitCode, "stderr=%q", stderr.String())
 	require.Len(t, r.componentsCfgs, 1)
 	return r.componentsCfgs[0]
+}
+
+func runTopologyCommand(t *testing.T, args ...string) topology.Config {
+	t.Helper()
+
+	r := &captureRunner{}
+	var stderr bytes.Buffer
+	exitCode := execute(args, &stderr, newRunnerWithCapture(r))
+	require.Zero(t, exitCode, "stderr=%q", stderr.String())
+	require.Len(t, r.topologyCfgs, 1)
+	return r.topologyCfgs[0]
+}
+
+func runTopologyCommandExpectError(t *testing.T, args ...string) {
+	t.Helper()
+
+	r := &captureRunner{}
+	var stderr bytes.Buffer
+	exitCode := execute(args, &stderr, newRunnerWithCapture(r))
+	require.NotZero(t, exitCode, "expected failure")
+	require.Empty(t, r.topologyCfgs, "runner should not be invoked on validation error")
 }
 
 func requireFilterRules(t *testing.T, got tap.LocalFilterRules, includeGlob, excludeGlob, includeRE, excludeRE []string) {
@@ -138,6 +166,30 @@ func TestComponentsYAMLFormat(t *testing.T) {
 func TestComponentsIncludeMetaFlag(t *testing.T) {
 	cfg := runComponentsCommand(t, "components", "--include-meta=false")
 	require.False(t, cfg.IncludeMeta)
+}
+
+func TestTopologyYAMLFormat(t *testing.T) {
+	cfg := runTopologyCommand(t, "topology", "--format", "yaml")
+	require.Equal(t, "yaml", cfg.Format)
+	require.Equal(t, "table", cfg.View)
+	require.False(t, cfg.Orphaned)
+	require.Equal(t, "direct", cfg.Type)
+	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.DirectURLs)
+}
+
+func TestTopologyViewFlag(t *testing.T) {
+	cfg := runTopologyCommand(t, "topology", "--view", "edges")
+	require.Equal(t, "edges", cfg.View)
+}
+
+func TestTopologyOrphanedFlag(t *testing.T) {
+	cfg := runTopologyCommand(t, "topology", "--orphaned")
+	require.True(t, cfg.Orphaned)
+	require.Equal(t, "table", cfg.View)
+}
+
+func TestTopologyOrphanedFlagValidation(t *testing.T) {
+	runTopologyCommandExpectError(t, "topology", "--view", "edges", "--orphaned")
 }
 
 func TestTapValidationErrors(t *testing.T) {

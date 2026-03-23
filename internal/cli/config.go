@@ -9,6 +9,7 @@ import (
 	components "github.com/grepplabs/vectap/internal/app/components"
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
+	topology "github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/grepplabs/vectap/internal/ptr"
 	"github.com/spf13/viper"
 )
@@ -96,6 +97,44 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 			IncludeMeta:     topIncludeMeta,
 		},
 		Sources: sources,
+	}
+	return cfg, cfg.Validate()
+}
+
+func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topology.Config, error) {
+	if cliFlagSet == nil {
+		cliFlagSet = func(string) bool { return false }
+	}
+
+	defs, err := loadDefaults(v)
+	if err != nil {
+		return topology.Config{}, err
+	}
+
+	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
+	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
+	sources, err := loadTopologySourceConfigs(defs, v, topFormat, topIncludeMeta)
+	if err != nil {
+		return topology.Config{}, err
+	}
+
+	cfg := topology.Config{
+		BaseConfig: runconfig.BaseConfig{
+			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
+			SelectedSources: getList(v, "source"),
+			AllSources:      v.GetBool("all-sources"),
+			Namespace:       resolveString(v, cliFlagSet, "namespace", defs.Discovery.Namespace),
+			LabelSelector:   resolveString(v, cliFlagSet, "selector", defs.Discovery.Selector),
+			KubeConfigPath:  resolveString(v, cliFlagSet, "kubeconfig", defs.Cluster.KubeConfig),
+			KubeContext:     resolveString(v, cliFlagSet, "context", defs.Cluster.Context),
+			Format:          topFormat,
+			VectorPort:      resolveInt(v, cliFlagSet, "vector-port", defs.Transport.VectorPort),
+			IncludeMeta:     topIncludeMeta,
+		},
+		View:     resolveString(v, cliFlagSet, "view", topology.ViewTable),
+		Orphaned: resolveBool(v, cliFlagSet, "orphaned", ptr.To(false)),
+		Sources:  sources,
 	}
 	return cfg, cfg.Validate()
 }
@@ -286,6 +325,60 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 	return out, nil
 }
 
+func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool) ([]topology.SourceConfig, error) {
+	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
+	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
+	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
+	fallbackNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
+	fallbackSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
+	fallbackVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
+
+	var srcFiles []sourceFile
+	if err := v.UnmarshalKey("sources", &srcFiles); err != nil {
+		return nil, fmt.Errorf("decode sources: %w", err)
+	}
+	out := make([]topology.SourceConfig, 0, len(srcFiles))
+	for _, s := range srcFiles {
+		sourceType := ptr.Default(s.Type, defaultType)
+		enabled := ptr.Deref(s.Enabled, true)
+		format := ptr.Default(s.Format, defaultFormat)
+		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
+		namespace := ptr.Default(s.Discovery.Namespace, fallbackNamespace)
+		selector := ptr.Default(s.Discovery.Selector, fallbackSelector)
+		vectorPort := ptr.Default(ptr.Deref(s.Transport.VectorPort, 0), fallbackVectorPort)
+		kubeconfig := ptr.Default(s.Cluster.KubeConfig, defs.Cluster.KubeConfig)
+		kubeContext := ptr.Default(s.Cluster.Context, defs.Cluster.Context)
+
+		var directURLs []string
+		switch sourceType {
+		case runconfig.SourceTypeDirect:
+			url := ptr.Default(s.Endpoint.URL, fallbackDirectURL)
+			directURLs = []string{url}
+		case runconfig.SourceTypeKubernetes:
+			directURLs = nil
+		default:
+			// Validation will report unsupported type.
+		}
+
+		out = append(out, topology.SourceConfig{
+			BaseSourceConfig: runconfig.BaseSourceConfig{
+				Name:           s.Name,
+				Type:           sourceType,
+				Enabled:        enabled,
+				Format:         format,
+				DirectURLs:     directURLs,
+				Namespace:      namespace,
+				LabelSelector:  selector,
+				KubeConfigPath: kubeconfig,
+				KubeContext:    kubeContext,
+				VectorPort:     vectorPort,
+				IncludeMeta:    includeMeta,
+			},
+		})
+	}
+	return out, nil
+}
+
 func resolveString(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaultsValue string) string {
 	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
 		return v.GetString(key)
@@ -296,6 +389,7 @@ func resolveString(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaultsValue
 	return v.GetString(key)
 }
 
+//nolint:unparam
 func resolveStringSlice(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaultsValue string) []string {
 	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
 		return getList(v, key)
