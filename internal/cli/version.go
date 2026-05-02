@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
+var (
 	Version = "0.0.0-dev"
 )
 
@@ -24,7 +24,10 @@ func newVersionCmd() *cobra.Command {
 }
 
 func GetBuildVersion() string {
-	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" {
+	if Version != "0.0.0-dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 		return bi.Main.Version
 	}
 	return Version

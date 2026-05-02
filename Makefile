@@ -4,7 +4,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR       = $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 VERSION       ?= $(shell git describe --tags --always --dirty)
-LDFLAGS       ?= -X github.com/grepplabs/vectap/internal/cli/version.Version=$(VERSION)
+LDFLAGS       ?= -X github.com/grepplabs/vectap/internal/cli.Version=$(VERSION)
 
 
 ##@ General

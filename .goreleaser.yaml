@@ -17,7 +17,7 @@ builds:
     flags:
       - -a
     ldflags:
-      - -X github.com/grepplabs/vectap/internal/cli/version.Version={{ .Version }}
+      - -X github.com/grepplabs/vectap/internal/cli.Version={{ .Version }}
 archives: []
 
 checksum:
