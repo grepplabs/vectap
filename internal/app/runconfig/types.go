@@ -4,6 +4,7 @@ import "errors"
 
 type BaseConfig struct {
 	Type            string
+	API             string
 	DirectURLs      []string
 	SourceName      string
 	SelectedSources []string
@@ -20,6 +21,7 @@ type BaseConfig struct {
 type BaseSourceConfig struct {
 	Name           string
 	Type           string
+	API            string
 	Enabled        bool
 	Format         string
 	DirectURLs     []string
@@ -38,6 +40,13 @@ func (cfg BaseConfig) UsesConfiguredSources() bool {
 //nolint:cyclop
 func (cfg BaseConfig) Validate() error {
 	if err := ValidateAllowed("", "type", cfg.Type, false, SourceTypeDirect, SourceTypeKubernetes); err != nil {
+		return err
+	}
+	api := cfg.API
+	if api == "" {
+		api = string(VectorDefaultAPI)
+	}
+	if err := ValidateAllowed("", "api", api, false, string(VectorAPIGraphQL), string(VectorAPIGrpc)); err != nil {
 		return err
 	}
 	if err := ValidateDirectURLs("", cfg.Type, SourceTypeDirect, cfg.DirectURLs); err != nil {
@@ -61,6 +70,13 @@ func (cfg BaseSourceConfig) Validate() error {
 		return errors.New("source name is required")
 	}
 	if err := ValidateAllowed(cfg.Name, "type", cfg.Type, false, SourceTypeDirect, SourceTypeKubernetes); err != nil {
+		return err
+	}
+	api := cfg.API
+	if api == "" {
+		api = string(VectorDefaultAPI)
+	}
+	if err := ValidateAllowed(cfg.Name, "api", api, false, string(VectorAPIGraphQL), string(VectorAPIGrpc)); err != nil {
 		return err
 	}
 	if err := ValidateDirectURLs(cfg.Name, cfg.Type, SourceTypeDirect, cfg.DirectURLs); err != nil {

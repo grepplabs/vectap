@@ -21,7 +21,8 @@ import (
 )
 
 type Runner struct {
-	client vectorapi.Client
+	client    vectorapi.Client
+	newClient func(api string) (vectorapi.Client, error)
 }
 
 type kubeTargetObserver interface {
@@ -52,7 +53,7 @@ type eventFilter struct {
 
 func NewDefaultRunner() *Runner {
 	return &Runner{
-		client: vectorapi.NewGraphQLWSClient(),
+		newClient: vectorapi.NewClient,
 	}
 }
 
@@ -128,9 +129,14 @@ func (r *Runner) addSourceStreams(ctx context.Context, cfg Config, mux *stream.M
 }
 
 func (r *Runner) addDirectSourceStreams(ctx context.Context, cfg Config, mux *stream.Mux) error {
+	client, err := r.clientForAPI(cfg.API)
+	if err != nil {
+		return err
+	}
+
 	for i, endpointURL := range cfg.DirectURLs {
 		target := directTarget(i, endpointURL)
-		if _, err := r.addTapStream(ctx, cfg, mux, endpointURL, target); err != nil {
+		if _, err := r.addTapStream(ctx, client, cfg, mux, endpointURL, target); err != nil {
 			return err
 		}
 	}
@@ -138,6 +144,11 @@ func (r *Runner) addDirectSourceStreams(ctx context.Context, cfg Config, mux *st
 }
 
 func (r *Runner) addKubernetesSourceStreams(ctx context.Context, cfg Config, mux *stream.Mux) error {
+	client, err := r.clientForAPI(cfg.API)
+	if err != nil {
+		return err
+	}
+
 	if _, err := newEventFilter(cfg.LocalFilters); err != nil {
 		return err
 	}
@@ -163,14 +174,22 @@ func (r *Runner) addKubernetesSourceStreams(ctx context.Context, cfg Config, mux
 	mux.Add(cfg.SourceName+"/kubernetes", keepAliveEvents, runtimeErrs)
 	close(keepAliveEvents)
 
-	go r.runKubernetesSource(ctx, cfg, mux, fwd, snapshots, observeErrs, runtimeErrs)
+	go r.runKubernetesSource(ctx, client, cfg, mux, fwd, snapshots, observeErrs, runtimeErrs)
 
 	return nil
+}
+
+func (r *Runner) clientForAPI(api string) (vectorapi.Client, error) {
+	if r.client != nil {
+		return r.client, nil
+	}
+	return r.newClient(api)
 }
 
 //nolint:cyclop
 func (r *Runner) runKubernetesSource(
 	ctx context.Context,
+	client vectorapi.Client,
 	cfg Config,
 	mux *stream.Mux,
 	fwd forward.Manager,
@@ -197,11 +216,11 @@ func (r *Runner) runKubernetesSource(
 		case <-ctx.Done():
 			return
 		case <-reconcileTicker.C:
-			r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+			r.reconcileTapTargets(ctx, client, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
 		case targetID := <-finishedTargets:
 			if _, ok := active[targetID]; ok {
 				delete(active, targetID)
-				r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+				r.reconcileTapTargets(ctx, client, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
 			}
 		case err, ok := <-observeErrs:
 			if !ok {
@@ -218,13 +237,14 @@ func (r *Runner) runKubernetesSource(
 			for _, target := range ts {
 				desired[target.ID] = target
 			}
-			r.reconcileTapTargets(ctx, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
+			r.reconcileTapTargets(ctx, client, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
 		}
 	}
 }
 
 func (r *Runner) reconcileTapTargets(
 	ctx context.Context,
+	client vectorapi.Client,
 	cfg Config,
 	mux *stream.Mux,
 	fwd forward.Manager,
@@ -253,7 +273,7 @@ func (r *Runner) reconcileTapTargets(
 			sendAsyncError(runtimeErrs, fmt.Errorf("start port-forward for %s: %w", target.ID, err))
 			continue
 		}
-		tapDone, err := r.addTapStream(targetCtx, cfg, mux, session.EndpointURL, target)
+		tapDone, err := r.addTapStream(targetCtx, client, cfg, mux, session.EndpointURL, target)
 		if err != nil {
 			cancel()
 			sendAsyncError(runtimeErrs, err)
@@ -274,12 +294,12 @@ func (r *Runner) reconcileTapTargets(
 	}
 }
 
-func (r *Runner) addTapStream(ctx context.Context, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) (<-chan struct{}, error) {
+func (r *Runner) addTapStream(ctx context.Context, client vectorapi.Client, cfg Config, mux *stream.Mux, endpointURL string, target targets.Target) (<-chan struct{}, error) {
 	evFilter, err := newEventFilter(cfg.LocalFilters)
 	if err != nil {
 		return nil, err
 	}
-	events, errs := r.client.Tap(ctx, endpointURL, newTapRequest(cfg, target))
+	events, errs := client.Tap(ctx, endpointURL, newTapRequest(cfg, target))
 	outCh := make(chan output.Event)
 	outErrs := make(chan error)
 	streamDone := make(chan struct{})
@@ -420,6 +440,7 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 	for _, s := range selected {
 		sc := cfg
 		sc.Type = s.Type
+		sc.API = s.API
 		sc.DirectURLs = append([]string{}, s.DirectURLs...)
 		sc.Namespace = s.Namespace
 		sc.LabelSelector = s.LabelSelector

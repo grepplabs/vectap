@@ -2,6 +2,7 @@ package topology
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
@@ -181,4 +182,41 @@ func TestOnlyOrphaned(t *testing.T) {
 	got := onlyOrphaned(in)
 	require.Len(t, got, 1)
 	require.Equal(t, "a", got[0].ComponentID)
+}
+
+type topologyNoopClient struct{}
+
+func (topologyNoopClient) Tap(context.Context, string, vectorapi.TapRequest) (<-chan vectorapi.TapEvent, <-chan error) {
+	return nil, nil
+}
+
+func (topologyNoopClient) Components(context.Context, string, vectorapi.ComponentsRequest) ([]vectorapi.Component, error) {
+	return nil, nil
+}
+
+func (topologyNoopClient) Topology(context.Context, string, vectorapi.TopologyRequest) ([]vectorapi.TopologyComponent, error) {
+	return []vectorapi.TopologyComponent{}, nil
+}
+
+func TestListSourceTopologyUsesSourceAPIClient(t *testing.T) {
+	var gotAPI string
+	r := NewRunner(func(api string) (vectorapi.Client, error) {
+		gotAPI = api
+		return topologyNoopClient{}, nil
+	})
+
+	cfg := Config{
+		BaseConfig: runconfig.BaseConfig{
+			Type:       runconfig.SourceTypeDirect,
+			API:        string(runconfig.VectorAPIGrpc),
+			DirectURLs: []string{runconfig.DefaultDirectURL},
+			Namespace:  runconfig.DefaultNamespace,
+			Format:     runconfig.FormatText,
+			VectorPort: runconfig.DefaultVectorPort,
+		},
+	}
+
+	_, err := r.listSourceTopology(t.Context(), cfg)
+	require.NoError(t, err)
+	require.Equal(t, string(runconfig.VectorAPIGrpc), gotAPI)
 }

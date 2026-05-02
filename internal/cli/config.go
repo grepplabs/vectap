@@ -25,9 +25,10 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 	}
 
 	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
+	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
 	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
 
-	sources, err := loadSourceConfigs(defs, v, topFormat, topIncludeMeta)
+	sources, err := loadSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
 		return tap.Config{}, err
 	}
@@ -35,6 +36,7 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 	cfg := tap.Config{
 		BaseConfig: runconfig.BaseConfig{
 			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			API:             topAPI,
 			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
 			SelectedSources: getList(v, "source"),
 			AllSources:      v.GetBool("all-sources"),
@@ -76,8 +78,9 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 	}
 
 	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
+	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
 	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
-	sources, err := loadComponentsSourceConfigs(defs, v, topFormat, topIncludeMeta)
+	sources, err := loadComponentsSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
 		return components.Config{}, err
 	}
@@ -85,6 +88,7 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 	cfg := components.Config{
 		BaseConfig: runconfig.BaseConfig{
 			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			API:             topAPI,
 			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
 			SelectedSources: getList(v, "source"),
 			AllSources:      v.GetBool("all-sources"),
@@ -112,8 +116,9 @@ func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topolog
 	}
 
 	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
+	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
 	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
-	sources, err := loadTopologySourceConfigs(defs, v, topFormat, topIncludeMeta)
+	sources, err := loadTopologySourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
 		return topology.Config{}, err
 	}
@@ -121,6 +126,7 @@ func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topolog
 	cfg := topology.Config{
 		BaseConfig: runconfig.BaseConfig{
 			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			API:             topAPI,
 			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
 			SelectedSources: getList(v, "source"),
 			AllSources:      v.GetBool("all-sources"),
@@ -133,7 +139,7 @@ func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topolog
 			IncludeMeta:     topIncludeMeta,
 		},
 		View:     resolveString(v, cliFlagSet, "view", topology.ViewTable),
-		Orphaned: resolveBool(v, cliFlagSet, "orphaned", ptr.To(false)),
+		Orphaned: resolveBool(v, cliFlagSet, "orphaned", new(false)),
 		Sources:  sources,
 	}
 	return cfg, cfg.Validate()
@@ -141,6 +147,7 @@ func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topolog
 
 type defaultsFile struct {
 	Type         string   `mapstructure:"type"`
+	API          string   `mapstructure:"api"`
 	DirectURL    string   `mapstructure:"direct_url"`
 	Format       string   `mapstructure:"format"`
 	OutputsOf    []string `mapstructure:"outputs_of"`
@@ -165,6 +172,7 @@ type defaultsFile struct {
 type sourceFile struct {
 	Name          string   `mapstructure:"name"`
 	Type          string   `mapstructure:"type"`
+	API           string   `mapstructure:"api"`
 	Enabled       *bool    `mapstructure:"enabled"`
 	Format        string   `mapstructure:"format"`
 	IncludeMeta   *bool    `mapstructure:"include_meta"`
@@ -195,11 +203,12 @@ func loadDefaults(v *viper.Viper) (defaultsFile, error) {
 	if err := v.UnmarshalKey("defaults", &defs); err != nil {
 		return defaultsFile{}, fmt.Errorf("decode defaults: %w", err)
 	}
+	defs.API = ptr.Default(defs.API, string(runconfig.VectorDefaultAPI))
 	return defs, nil
 }
 
 //nolint:funlen
-func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool) ([]tap.SourceConfig, error) {
+func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]tap.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -216,6 +225,7 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 	out := make([]tap.SourceConfig, 0, len(srcFiles))
 	for _, s := range srcFiles {
 		sourceType := ptr.Default(s.Type, defaultType)
+		sourceAPI := ptr.Default(s.API, defaultAPI)
 		enabled := ptr.Deref(s.Enabled, true)
 		format := ptr.Default(s.Format, defaultFormat)
 		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
@@ -250,6 +260,7 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 			BaseSourceConfig: runconfig.BaseSourceConfig{
 				Name:           s.Name,
 				Type:           sourceType,
+				API:            sourceAPI,
 				Enabled:        enabled,
 				Format:         format,
 				DirectURLs:     directURLs,
@@ -273,7 +284,7 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 	return out, nil
 }
 
-func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool) ([]components.SourceConfig, error) {
+func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]components.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -288,6 +299,7 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 	out := make([]components.SourceConfig, 0, len(srcFiles))
 	for _, s := range srcFiles {
 		sourceType := ptr.Default(s.Type, defaultType)
+		sourceAPI := ptr.Default(s.API, defaultAPI)
 		enabled := ptr.Deref(s.Enabled, true)
 		format := ptr.Default(s.Format, defaultFormat)
 		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
@@ -310,6 +322,7 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 			BaseSourceConfig: runconfig.BaseSourceConfig{
 				Name:           s.Name,
 				Type:           sourceType,
+				API:            sourceAPI,
 				Enabled:        enabled,
 				Format:         format,
 				DirectURLs:     directURLs,
@@ -325,7 +338,7 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 	return out, nil
 }
 
-func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool) ([]topology.SourceConfig, error) {
+func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]topology.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -340,6 +353,7 @@ func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat 
 	out := make([]topology.SourceConfig, 0, len(srcFiles))
 	for _, s := range srcFiles {
 		sourceType := ptr.Default(s.Type, defaultType)
+		sourceAPI := ptr.Default(s.API, defaultAPI)
 		enabled := ptr.Deref(s.Enabled, true)
 		format := ptr.Default(s.Format, defaultFormat)
 		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
@@ -364,6 +378,7 @@ func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat 
 			BaseSourceConfig: runconfig.BaseSourceConfig{
 				Name:           s.Name,
 				Type:           sourceType,
+				API:            sourceAPI,
 				Enabled:        enabled,
 				Format:         format,
 				DirectURLs:     directURLs,

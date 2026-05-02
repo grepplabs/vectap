@@ -21,7 +21,7 @@ import (
 )
 
 type Runner struct {
-	client vectorapi.Client
+	newClient func(api string) (vectorapi.Client, error)
 }
 
 //nolint:tagliatelle
@@ -35,11 +35,11 @@ type ListedComponent struct {
 }
 
 func NewDefaultRunner() *Runner {
-	return &Runner{client: vectorapi.NewGraphQLWSClient()}
+	return &Runner{newClient: vectorapi.NewClient}
 }
 
-func NewRunner(client vectorapi.Client) *Runner {
-	return &Runner{client: client}
+func NewRunner(newClient func(api string) (vectorapi.Client, error)) *Runner {
+	return &Runner{newClient: newClient}
 }
 
 func (r *Runner) Components(ctx context.Context, cfg Config) error {
@@ -84,12 +84,17 @@ func (r *Runner) Components(ctx context.Context, cfg Config) error {
 
 // nolint:cyclop
 func (r *Runner) listSourceComponents(ctx context.Context, cfg Config) ([]ListedComponent, error) {
+	client, err := r.newClient(cfg.API)
+	if err != nil {
+		return nil, err
+	}
+
 	switch cfg.Type {
 	case runconfig.SourceTypeDirect:
 		var out []ListedComponent
 		for i, endpointURL := range cfg.DirectURLs {
 			target := directTarget(i, endpointURL)
-			components, err := r.client.Components(ctx, endpointURL, vectorapi.ComponentsRequest{})
+			components, err := client.Components(ctx, endpointURL, vectorapi.ComponentsRequest{})
 			if err != nil {
 				return nil, err
 			}
@@ -124,7 +129,7 @@ func (r *Runner) listSourceComponents(ctx context.Context, cfg Config) ([]Listed
 			if err != nil {
 				return nil, fmt.Errorf("start port-forward for %s: %w", t.ID, err)
 			}
-			components, err := r.client.Components(ctx, session.EndpointURL, vectorapi.ComponentsRequest{})
+			components, err := client.Components(ctx, session.EndpointURL, vectorapi.ComponentsRequest{})
 			if err != nil {
 				return nil, err
 			}
@@ -155,6 +160,7 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 	for _, s := range selected {
 		sc := cfg
 		sc.Type = s.Type
+		sc.API = s.API
 		sc.DirectURLs = append([]string{}, s.DirectURLs...)
 		sc.Namespace = s.Namespace
 		sc.LabelSelector = s.LabelSelector

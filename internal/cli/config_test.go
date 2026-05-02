@@ -5,10 +5,86 @@ import (
 	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
-	"github.com/grepplabs/vectap/internal/ptr"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTapConfigFromViperDefaultAPIResolution(t *testing.T) {
+	v := viper.New()
+	v.Set("defaults.type", runconfig.SourceTypeDirect)
+	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
+	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
+	v.Set("defaults.format", runconfig.FormatText)
+	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
+	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
+
+	cfg, err := tapConfigFromViper(v, nil)
+	require.NoError(t, err)
+	require.Equal(t, string(runconfig.VectorDefaultAPI), cfg.API)
+}
+
+func TestTapConfigFromViperCLIOverridesDefaultAPI(t *testing.T) {
+	v := viper.New()
+	v.Set("defaults.type", runconfig.SourceTypeDirect)
+	v.Set("defaults.api", string(runconfig.VectorAPIGraphQL))
+	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
+	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
+	v.Set("defaults.format", runconfig.FormatText)
+	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
+	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
+	v.Set("api", string(runconfig.VectorAPIGrpc))
+
+	cfg, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	require.NoError(t, err)
+	require.Equal(t, string(runconfig.VectorAPIGrpc), cfg.API)
+}
+
+func TestTapConfigFromViperPerSourceAPIOverridesTopLevel(t *testing.T) {
+	v := viper.New()
+	v.Set("defaults.type", runconfig.SourceTypeDirect)
+	v.Set("defaults.api", string(runconfig.VectorAPIGraphQL))
+	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
+	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
+	v.Set("defaults.format", runconfig.FormatText)
+	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
+	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
+	v.Set("api", string(runconfig.VectorAPIGrpc))
+	v.Set("all-sources", true)
+	v.Set("sources", []map[string]any{
+		{
+			"name": "src-a",
+			"type": runconfig.SourceTypeDirect,
+			"api":  string(runconfig.VectorAPIGraphQL),
+			"endpoint": map[string]any{
+				"url": runconfig.DefaultDirectURL,
+			},
+		},
+	})
+
+	cfg, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	require.NoError(t, err)
+	require.Equal(t, string(runconfig.VectorAPIGrpc), cfg.API)
+	require.Len(t, cfg.Sources, 1)
+	require.Equal(t, string(runconfig.VectorAPIGraphQL), cfg.Sources[0].API)
+}
+
+func TestTapConfigFromViperRejectsInvalidAPI(t *testing.T) {
+	v := viper.New()
+	v.Set("defaults.type", runconfig.SourceTypeDirect)
+	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
+	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
+	v.Set("defaults.format", runconfig.FormatText)
+	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
+	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
+	v.Set("api", "bad-api")
+
+	_, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	require.EqualError(t, err, `unsupported api "bad-api"`)
+}
 
 func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	v := viper.New()
@@ -93,9 +169,9 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 	defs.DirectURL = "http://127.0.0.1:8686/graphql"
 	defs.Discovery.Namespace = "default"
 	defs.Discovery.Selector = "app.kubernetes.io/name=vector"
-	defs.Transport.VectorPort = ptr.To(8686)
-	defs.Transport.Interval = ptr.To(500)
-	defs.Transport.Limit = ptr.To(100)
+	defs.Transport.VectorPort = new(8686)
+	defs.Transport.Interval = new(500)
+	defs.Transport.Limit = new(100)
 	defs.Cluster.Context = "default-ctx"
 
 	v.Set("sources", []map[string]any{
@@ -125,7 +201,7 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 		},
 	})
 
-	sources, err := loadSourceConfigs(defs, v, runconfig.FormatJSON, true)
+	sources, err := loadSourceConfigs(defs, v, runconfig.FormatJSON, true, string(runconfig.VectorDefaultAPI))
 	require.NoError(t, err)
 	require.Len(t, sources, 2)
 
@@ -157,9 +233,9 @@ func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
 	defs.DirectURL = runconfig.DefaultDirectURL
 	defs.Discovery.Namespace = runconfig.DefaultNamespace
 	defs.Discovery.Selector = runconfig.DefaultSelector
-	defs.Transport.VectorPort = ptr.To(runconfig.DefaultVectorPort)
-	defs.Transport.Interval = ptr.To(runconfig.DefaultTapInterval)
-	defs.Transport.Limit = ptr.To(runconfig.DefaultTapLimit)
+	defs.Transport.VectorPort = new(runconfig.DefaultVectorPort)
+	defs.Transport.Interval = new(runconfig.DefaultTapInterval)
+	defs.Transport.Limit = new(runconfig.DefaultTapLimit)
 
 	v.Set("sources", []map[string]any{
 		{
@@ -172,7 +248,7 @@ func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
 		},
 	})
 
-	sources, err := loadSourceConfigs(defs, v, runconfig.FormatText, true)
+	sources, err := loadSourceConfigs(defs, v, runconfig.FormatText, true, string(runconfig.VectorDefaultAPI))
 	require.NoError(t, err)
 	require.Len(t, sources, 1)
 	require.False(t, sources[0].ApplyDefaults)
@@ -188,9 +264,9 @@ func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
 	defs.DirectURL = runconfig.DefaultDirectURL
 	defs.Discovery.Namespace = runconfig.DefaultNamespace
 	defs.Discovery.Selector = runconfig.DefaultSelector
-	defs.Transport.VectorPort = ptr.To(runconfig.DefaultVectorPort)
-	defs.Transport.Interval = ptr.To(runconfig.DefaultTapInterval)
-	defs.Transport.Limit = ptr.To(runconfig.DefaultTapLimit)
+	defs.Transport.VectorPort = new(runconfig.DefaultVectorPort)
+	defs.Transport.Interval = new(runconfig.DefaultTapInterval)
+	defs.Transport.Limit = new(runconfig.DefaultTapLimit)
 
 	v.Set("sources", []map[string]any{
 		{
@@ -200,7 +276,7 @@ func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
 		},
 	})
 
-	_, err := loadSourceConfigs(defs, v, runconfig.FormatText, true)
+	_, err := loadSourceConfigs(defs, v, runconfig.FormatText, true, string(runconfig.VectorDefaultAPI))
 	require.EqualError(t, err, `source "src-a": invalid local-filter "+unknown.field:x": unsupported field "unknown.field"`)
 }
 
@@ -210,11 +286,11 @@ func TestResolveHelpersUseDefaultsWhenNoCLIConfigEnv(t *testing.T) {
 
 	require.Equal(t, "json", resolveString(v, none, "format", "json"))
 	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, resolveStringSlice(v, none, "direct-url", "http://127.0.0.1:8686/graphql"))
-	require.Equal(t, 9999, resolveInt(v, none, "vector-port", ptr.To(9999)))
-	require.Equal(t, 500, resolveInt(v, none, "interval", ptr.To(500)))
-	require.Equal(t, 100, resolveInt(v, none, "limit", ptr.To(100)))
+	require.Equal(t, 9999, resolveInt(v, none, "vector-port", new(9999)))
+	require.Equal(t, 500, resolveInt(v, none, "interval", new(500)))
+	require.Equal(t, 100, resolveInt(v, none, "limit", new(100)))
 	require.Equal(t, 30*time.Second, resolveDuration(v, none, "duration", "30s"))
-	require.True(t, resolveBool(v, none, "include-meta", ptr.To(true)))
+	require.True(t, resolveBool(v, none, "include-meta", new(true)))
 }
 
 func TestComponentsConfigFromViperDefaultsFallback(t *testing.T) {
@@ -252,7 +328,7 @@ func TestLoadComponentsSourceConfigsSourceOverrides(t *testing.T) {
 	defs.DirectURL = "http://127.0.0.1:8686/graphql"
 	defs.Discovery.Namespace = "default"
 	defs.Discovery.Selector = "app.kubernetes.io/name=vector"
-	defs.Transport.VectorPort = ptr.To(8686)
+	defs.Transport.VectorPort = new(8686)
 	defs.Cluster.Context = "default-ctx"
 
 	v.Set("sources", []map[string]any{
@@ -274,7 +350,7 @@ func TestLoadComponentsSourceConfigsSourceOverrides(t *testing.T) {
 		},
 	})
 
-	sources, err := loadComponentsSourceConfigs(defs, v, runconfig.FormatYAML, true)
+	sources, err := loadComponentsSourceConfigs(defs, v, runconfig.FormatYAML, true, string(runconfig.VectorDefaultAPI))
 	require.NoError(t, err)
 	require.Len(t, sources, 2)
 

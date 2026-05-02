@@ -2,15 +2,18 @@ package vectorapi
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	vectorpb "github.com/grepplabs/vectap/internal/vectorapi/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -189,12 +192,17 @@ func (c *GRPCClient) tap(ctx context.Context, endpointURL string, req TapRequest
 }
 
 func (c *GRPCClient) newObservabilityClient(endpointURL string) (vectorpb.ObservabilityServiceClient, *grpc.ClientConn, error) {
-	target, err := grpcTarget(endpointURL)
+	target, useTLS, err := grpcDialTarget(endpointURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	transportCreds := insecure.NewCredentials()
+	if useTLS {
+		transportCreds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}) //nolint:gosec
+	}
+
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(transportCreds))
 	if err != nil {
 		return nil, nil, fmt.Errorf("create grpc client connection: %w", err)
 	}
@@ -202,16 +210,16 @@ func (c *GRPCClient) newObservabilityClient(endpointURL string) (vectorpb.Observ
 	return vectorpb.NewObservabilityServiceClient(conn), conn, nil
 }
 
-func grpcTarget(endpointURL string) (string, error) {
+func grpcDialTarget(endpointURL string) (string, bool, error) {
 	if strings.Contains(endpointURL, "://") {
 		u, err := url.Parse(endpointURL)
 		if err != nil {
-			return "", fmt.Errorf("parse endpoint url: %w", err)
+			return "", false, fmt.Errorf("parse endpoint url: %w", err)
 		}
 		if u.Host == "" {
-			return "", fmt.Errorf("endpoint url %q has empty host", endpointURL)
+			return "", false, fmt.Errorf("endpoint url %q has empty host", endpointURL)
 		}
-		return u.Host, nil
+		return u.Host, strings.EqualFold(u.Scheme, "https"), nil
 	}
 
 	target := endpointURL
@@ -220,9 +228,9 @@ func grpcTarget(endpointURL string) (string, error) {
 	}
 	target = strings.TrimSpace(target)
 	if target == "" {
-		return "", fmt.Errorf("empty grpc target from endpoint %q", endpointURL)
+		return "", false, fmt.Errorf("empty grpc target from endpoint %q", endpointURL)
 	}
-	return target, nil
+	return target, false, nil
 }
 
 func componentKindFromProto(v vectorpb.ComponentType) string {
@@ -285,6 +293,7 @@ func tapEventTimestampFromProto(event *vectorpb.EventWrapper) time.Time {
 	return time.Now().UTC()
 }
 
+//nolint:cyclop
 func tapEventMessageFromProto(event *vectorpb.EventWrapper) string {
 	if event == nil {
 		return ""
@@ -341,6 +350,7 @@ func tapEventMetaFromProto(ev *vectorpb.TappedEvent) map[string]string {
 	return meta
 }
 
+//nolint:cyclop
 func mergeMetadata(meta map[string]string, md *vectorpb.Metadata) {
 	if md == nil {
 		return
@@ -370,6 +380,7 @@ func mergeMetadata(meta map[string]string, md *vectorpb.Metadata) {
 	}
 }
 
+//nolint:cyclop
 func valueToString(v *vectorpb.Value) (string, bool) {
 	if v == nil {
 		return "", false
@@ -378,11 +389,11 @@ func valueToString(v *vectorpb.Value) (string, bool) {
 	case *vectorpb.Value_RawBytes:
 		return string(x.RawBytes), true
 	case *vectorpb.Value_Integer:
-		return fmt.Sprintf("%d", x.Integer), true
+		return strconv.FormatInt(x.Integer, 10), true
 	case *vectorpb.Value_Float:
 		return fmt.Sprintf("%g", x.Float), true
 	case *vectorpb.Value_Boolean:
-		return fmt.Sprintf("%t", x.Boolean), true
+		return strconv.FormatBool(x.Boolean), true
 	case *vectorpb.Value_Timestamp:
 		if x.Timestamp == nil {
 			return "", false

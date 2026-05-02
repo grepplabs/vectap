@@ -123,6 +123,36 @@ func TestRunTapExitsCleanlyAfterDuration(t *testing.T) {
 	require.GreaterOrEqual(t, time.Since(start), 15*time.Millisecond)
 }
 
+func TestAddSourceStreamsUsesSourceAPIClient(t *testing.T) {
+	var gotAPI string
+	client := &fakeTapClient{
+		eventsByEndpoint: map[string][]vectorapi.TapEvent{
+			runconfig.DefaultDirectURL: {{Message: "ok"}},
+		},
+	}
+	r := &Runner{
+		newClient: func(api string) (vectorapi.Client, error) {
+			gotAPI = api
+			return client, nil
+		},
+	}
+
+	mux := stream.NewMux()
+	cfg := testTapConfig(runconfig.BaseConfig{
+		Type:       runconfig.SourceTypeDirect,
+		API:        string(runconfig.VectorAPIGrpc),
+		DirectURLs: []string{runconfig.DefaultDirectURL},
+		Namespace:  runconfig.DefaultNamespace,
+		Format:     runconfig.FormatText,
+		VectorPort: runconfig.DefaultVectorPort,
+	})
+	cfg.Interval = runconfig.DefaultTapInterval
+	cfg.Limit = runconfig.DefaultTapLimit
+
+	require.NoError(t, r.addSourceStreams(t.Context(), cfg, mux))
+	require.Equal(t, string(runconfig.VectorAPIGrpc), gotAPI)
+}
+
 func TestExpandRunConfigsSourceDefaultsApplied(t *testing.T) {
 	cfg := testTapConfig(
 		runconfig.BaseConfig{

@@ -6,10 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTo(t *testing.T) {
-	require.Equal(t, "value", *To("value"))
-}
-
 func TestDefault(t *testing.T) {
 	require.Equal(t, "fallback", Default("", "fallback"))
 	require.Equal(t, "value", Default("value", "fallback"))

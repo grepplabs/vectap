@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/assets/logo.png" alt="vectap logo" width="400"/>
   <p>
-    <strong>CLI for streaming events from Vector GraphQL tap endpoints.</strong>
+    <strong>CLI for streaming events from Vector observability endpoints (GraphQL and gRPC).</strong>
   </p>
 </div>
 
@@ -10,7 +10,7 @@
 [![Build](https://github.com/grepplabs/vectap/actions/workflows/build.yml/badge.svg)](https://github.com/grepplabs/vectap/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/grepplabs/vectap?sort=semver)](https://github.com/grepplabs/vectap/releases)
 
-`vectap` is a CLI for streaming events from [Vector](https://vector.dev/) GraphQL tap endpoints. It can
+`vectap` is a CLI for streaming events from [Vector](https://vector.dev/) observability endpoints. It can
 connect directly to one or more Vector API URLs, or discover Vector pods in
 Kubernetes, port-forward to them, and merge their tap output into one stream.
 
@@ -18,9 +18,19 @@ It is designed to:
 
 - discover Vector pods in Kubernetes
 - port-forward to each pod automatically
-- connect to each Vector GraphQL endpoint
+- connect to each Vector API endpoint
 - subscribe to tap event streams
 - merge streams into one terminal view
+
+## Vector API compatibility
+
+- `vectap` supports both `graphql` and `grpc` API protocols.
+- Starting with Vector `v0.55.0`, GraphQL observability endpoints were removed and gRPC must be used.
+- For Vector `v0.55.0+`, use `api: grpc` (or `--api grpc`).
+- gRPC endpoints must not use the `/graphql` suffix. Use one of:
+  - `host:port` (for example `127.0.0.1:8686`)
+  - `http://host:port` (plain transport)
+  - `https://host:port` (TLS)
 
 ## Modes
 
@@ -111,6 +121,30 @@ sources:
 ```bash
 vectap --config vectap.yaml tap --all-sources
 vectap --config vectap.yaml tap --source eu-prod --source local
+```
+
+### API protocol selection (`graphql` or `grpc`)
+
+Select Vector API protocol globally and override per source:
+
+```yaml
+defaults:
+  api: grpc
+sources:
+  - name: eu-prod
+    type: kubernetes
+    # uses defaults.api => grpc
+  - name: legacy-direct
+    type: direct
+    api: graphql
+    endpoint:
+      url: http://127.0.0.1:8686/graphql
+```
+
+You can also override top-level API at runtime:
+
+```bash
+vectap tap --api grpc --type kubernetes -n observability -l app=vector
 ```
 
 ## Filtering

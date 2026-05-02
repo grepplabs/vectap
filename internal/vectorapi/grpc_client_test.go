@@ -9,24 +9,25 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestGRPCTarget(t *testing.T) {
+func TestGRPCDialTarget(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
 		want    string
+		wantTLS bool
 		wantErr bool
 	}{
-		{name: "host-port", input: "127.0.0.1:6000", want: "127.0.0.1:6000"},
-		{name: "http-url", input: "http://127.0.0.1:8686/graphql", want: "127.0.0.1:8686"},
-		{name: "https-url", input: "https://vector.example:9443/observability", want: "vector.example:9443"},
-		{name: "target-with-path", input: "127.0.0.1:7000/some/path", want: "127.0.0.1:7000"},
+		{name: "host-port", input: "127.0.0.1:6000", want: "127.0.0.1:6000", wantTLS: false},
+		{name: "http-url", input: "http://127.0.0.1:8686/graphql", want: "127.0.0.1:8686", wantTLS: false},
+		{name: "https-url", input: "https://vector.example:9443/observability", want: "vector.example:9443", wantTLS: true},
+		{name: "target-with-path", input: "127.0.0.1:7000/some/path", want: "127.0.0.1:7000", wantTLS: false},
 		{name: "invalid-empty", input: "   ", wantErr: true},
 		{name: "invalid-url-no-host", input: "http:///graphql", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := grpcTarget(tt.input)
+			got, gotTLS, err := grpcDialTarget(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -34,6 +35,7 @@ func TestGRPCTarget(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantTLS, gotTLS)
 		})
 	}
 }
