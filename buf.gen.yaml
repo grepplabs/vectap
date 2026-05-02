@@ -1,0 +1,22 @@
+version: v2
+
+plugins:
+  - local:
+      - go
+      - run
+      - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+    out: internal/vectorapi/proto
+    opt:
+      - paths=source_relative
+      - Mevent.proto=github.com/grepplabs/vectap/internal/vectorapi/proto
+      - Mobservability.proto=github.com/grepplabs/vectap/internal/vectorapi/proto
+  - local:
+      - go
+      - run
+      - google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+    out: internal/vectorapi/proto
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
+      - Mevent.proto=github.com/grepplabs/vectap/internal/vectorapi/proto
+      - Mobservability.proto=github.com/grepplabs/vectap/internal/vectorapi/proto
