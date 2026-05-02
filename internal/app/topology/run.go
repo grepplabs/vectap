@@ -22,7 +22,7 @@ import (
 )
 
 type Runner struct {
-	client vectorapi.Client
+	newClient func(api string) (vectorapi.Client, error)
 }
 
 //nolint:tagliatelle
@@ -46,11 +46,11 @@ type ListedTopology struct {
 }
 
 func NewDefaultRunner() *Runner {
-	return &Runner{client: vectorapi.NewGraphQLWSClient()}
+	return &Runner{newClient: vectorapi.NewClient}
 }
 
-func NewRunner(client vectorapi.Client) *Runner {
-	return &Runner{client: client}
+func NewRunner(newClient func(api string) (vectorapi.Client, error)) *Runner {
+	return &Runner{newClient: newClient}
 }
 
 func (r *Runner) Topology(ctx context.Context, cfg Config) error {
@@ -98,12 +98,17 @@ func (r *Runner) Topology(ctx context.Context, cfg Config) error {
 
 // nolint:cyclop
 func (r *Runner) listSourceTopology(ctx context.Context, cfg Config) ([]ListedTopology, error) {
+	client, err := r.newClient(cfg.API)
+	if err != nil {
+		return nil, err
+	}
+
 	switch cfg.Type {
 	case runconfig.SourceTypeDirect:
 		var out []ListedTopology
 		for i, endpointURL := range cfg.DirectURLs {
 			target := directTarget(i, endpointURL)
-			items, err := r.client.Topology(ctx, endpointURL, vectorapi.TopologyRequest{})
+			items, err := client.Topology(ctx, endpointURL, vectorapi.TopologyRequest{})
 			if err != nil {
 				return nil, err
 			}
@@ -138,7 +143,7 @@ func (r *Runner) listSourceTopology(ctx context.Context, cfg Config) ([]ListedTo
 			if err != nil {
 				return nil, fmt.Errorf("start port-forward for %s: %w", t.ID, err)
 			}
-			items, err := r.client.Topology(ctx, session.EndpointURL, vectorapi.TopologyRequest{})
+			items, err := client.Topology(ctx, session.EndpointURL, vectorapi.TopologyRequest{})
 			if err != nil {
 				return nil, err
 			}
@@ -169,6 +174,7 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 	for _, s := range selected {
 		sc := cfg
 		sc.Type = s.Type
+		sc.API = s.API
 		sc.DirectURLs = append([]string{}, s.DirectURLs...)
 		sc.Namespace = s.Namespace
 		sc.LabelSelector = s.LabelSelector

@@ -1,0 +1,24 @@
+defaults:
+  type: kubernetes
+  api: grpc
+  cluster:
+    kubeconfig: ""
+    context: ""
+  discovery:
+    namespace: default
+    selector: app.kubernetes.io/name=vector
+  transport:
+    vector_port: 8686
+
+sources:
+  - name: eu-prod
+    type: kubernetes
+    discovery:
+      namespace: observability
+      selector: app=vector
+
+  - name: legacy-direct
+    type: direct
+    api: graphql
+    endpoint:
+      url: http://127.0.0.1:8686/graphql

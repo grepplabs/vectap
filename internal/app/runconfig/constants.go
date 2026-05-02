@@ -1,8 +1,14 @@
 package runconfig
 
+type VectorAPI string
+
 const (
 	SourceTypeDirect     = "direct"
 	SourceTypeKubernetes = "kubernetes"
+
+	VectorAPIGraphQL VectorAPI = "graphql"
+	VectorAPIGrpc    VectorAPI = "grpc"
+	VectorDefaultAPI VectorAPI = VectorAPIGraphQL
 
 	FormatText = "text"
 	FormatJSON = "json"

@@ -1,10 +1,5 @@
 package ptr
 
-// To returns a pointer to the given value.
-func To[T any](v T) *T {
-	return &v
-}
-
 // Default returns fallback when value is the zero value for T.
 func Default[T comparable](value, fallback T) T {
 	var zero T

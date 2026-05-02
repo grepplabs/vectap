@@ -2,9 +2,11 @@ package components
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
+	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,4 +58,41 @@ func TestStripMeta(t *testing.T) {
 	require.Empty(t, out[0].Namespace)
 	require.Empty(t, out[0].PodName)
 	require.Equal(t, "generate_syslog", out[0].ComponentID)
+}
+
+type componentsNoopClient struct{}
+
+func (componentsNoopClient) Tap(context.Context, string, vectorapi.TapRequest) (<-chan vectorapi.TapEvent, <-chan error) {
+	return nil, nil
+}
+
+func (componentsNoopClient) Components(context.Context, string, vectorapi.ComponentsRequest) ([]vectorapi.Component, error) {
+	return []vectorapi.Component{}, nil
+}
+
+func (componentsNoopClient) Topology(context.Context, string, vectorapi.TopologyRequest) ([]vectorapi.TopologyComponent, error) {
+	return nil, nil
+}
+
+func TestListSourceComponentsUsesSourceAPIClient(t *testing.T) {
+	var gotAPI string
+	r := NewRunner(func(api string) (vectorapi.Client, error) {
+		gotAPI = api
+		return componentsNoopClient{}, nil
+	})
+
+	cfg := Config{
+		BaseConfig: runconfig.BaseConfig{
+			Type:       runconfig.SourceTypeDirect,
+			API:        string(runconfig.VectorAPIGrpc),
+			DirectURLs: []string{runconfig.DefaultDirectURL},
+			Namespace:  runconfig.DefaultNamespace,
+			Format:     runconfig.FormatText,
+			VectorPort: runconfig.DefaultVectorPort,
+		},
+	}
+
+	_, err := r.listSourceComponents(t.Context(), cfg)
+	require.NoError(t, err)
+	require.Equal(t, string(runconfig.VectorAPIGrpc), gotAPI)
 }

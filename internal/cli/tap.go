@@ -28,6 +28,7 @@ func newTapCmd(v *viper.Viper, newRunner newRunnerFunc) *cobra.Command {
 	cmd.Flags().StringP("namespace", "n", runconfig.DefaultNamespace, "kubernetes namespace")
 	cmd.Flags().StringP("selector", "l", runconfig.DefaultSelector, "label selector")
 	cmd.Flags().String("type", runconfig.SourceTypeDirect, "source type: direct|kubernetes")
+	cmd.Flags().String("api", string(runconfig.VectorDefaultAPI), "vector API protocol: graphql|grpc")
 	cmd.Flags().StringSlice("direct-url", []string{runconfig.DefaultDirectURL}, "direct Vector GraphQL endpoint URL(s) (repeatable and/or comma-separated)")
 	cmd.Flags().StringSlice("source", nil, "source names from config to run (repeatable and/or comma-separated)")
 	cmd.Flags().Bool("all-sources", false, "run all enabled sources from config")
