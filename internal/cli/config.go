@@ -19,41 +19,17 @@ func tapConfigFromKoanf(v *koanf.Koanf) (tap.Config, error) {
 		return tap.Config{}, err
 	}
 
-	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
-	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
-	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
-	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
-	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
-	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
 	defaultInterval := ptr.Default(ptr.Deref(defs.Transport.Interval, 0), runconfig.DefaultTapInterval)
 	defaultLimit := ptr.Default(ptr.Deref(defs.Transport.Limit, 0), runconfig.DefaultTapLimit)
-	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
-
-	topFormat := resolveString(v, "format", defaultFormat)
-	topAPI := resolveString(v, "api", defs.API)
-	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
-
-	sources, err := loadSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
+	baseConfig := baseConfigFromKoanf(v, defs)
+	sources, err := loadSourceConfigs(defs, v, baseConfig.Format, baseConfig.IncludeMeta, baseConfig.API)
 	if err != nil {
 		return tap.Config{}, err
 	}
 
 	cfg := tap.Config{
-		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, "type", defaultType),
-			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
-			SelectedSources: getList(v, "source"),
-			AllSources:      v.Bool("all-sources"),
-			Namespace:       resolveString(v, "namespace", defaultNamespace),
-			LabelSelector:   resolveString(v, "selector", defaultSelector),
-			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
-			Format:          topFormat,
-			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
-			IncludeMeta:     topIncludeMeta,
-		},
-		Sources: sources,
+		BaseConfig: baseConfig,
+		Sources:    sources,
 		TapScopeConfig: tap.TapScopeConfig{
 			OutputsOf: resolveStringSliceList(v, "outputs-of", defs.OutputsOf),
 			InputsOf:  resolveStringSliceList(v, "inputs-of", defs.InputsOf),
@@ -77,39 +53,15 @@ func componentsConfigFromKoanf(v *koanf.Koanf) (components.Config, error) {
 	if err != nil {
 		return components.Config{}, err
 	}
-
-	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
-	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
-	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
-	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
-	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
-	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
-	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
-
-	topFormat := resolveString(v, "format", defaultFormat)
-	topAPI := resolveString(v, "api", defs.API)
-	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
-	sources, err := loadComponentsSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
+	baseConfig := baseConfigFromKoanf(v, defs)
+	sources, err := loadComponentsSourceConfigs(defs, v, baseConfig.Format, baseConfig.IncludeMeta, baseConfig.API)
 	if err != nil {
 		return components.Config{}, err
 	}
 
 	cfg := components.Config{
-		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, "type", defaultType),
-			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
-			SelectedSources: getList(v, "source"),
-			AllSources:      v.Bool("all-sources"),
-			Namespace:       resolveString(v, "namespace", defaultNamespace),
-			LabelSelector:   resolveString(v, "selector", defaultSelector),
-			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
-			Format:          topFormat,
-			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
-			IncludeMeta:     topIncludeMeta,
-		},
-		Sources: sources,
+		BaseConfig: baseConfig,
+		Sources:    sources,
 	}
 	return cfg, cfg.Validate()
 }
@@ -120,42 +72,44 @@ func topologyConfigFromKoanf(v *koanf.Koanf) (topology.Config, error) {
 		return topology.Config{}, err
 	}
 
-	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
-	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
-	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
-	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
-	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
-	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
-	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
-
-	topFormat := resolveString(v, "format", defaultFormat)
-	topAPI := resolveString(v, "api", defs.API)
-	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
-	sources, err := loadTopologySourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
+	baseConfig := baseConfigFromKoanf(v, defs)
+	sources, err := loadTopologySourceConfigs(defs, v, baseConfig.Format, baseConfig.IncludeMeta, baseConfig.API)
 	if err != nil {
 		return topology.Config{}, err
 	}
 
 	cfg := topology.Config{
-		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, "type", defaultType),
-			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
-			SelectedSources: getList(v, "source"),
-			AllSources:      v.Bool("all-sources"),
-			Namespace:       resolveString(v, "namespace", defaultNamespace),
-			LabelSelector:   resolveString(v, "selector", defaultSelector),
-			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
-			Format:          topFormat,
-			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
-			IncludeMeta:     topIncludeMeta,
-		},
-		View:     resolveString(v, "view", topology.ViewTable),
-		Orphaned: resolveBool(v, "orphaned", new(false)),
-		Sources:  sources,
+		BaseConfig: baseConfig,
+		View:       resolveString(v, "view", topology.ViewTable),
+		Orphaned:   resolveBool(v, "orphaned", new(false)),
+		Sources:    sources,
 	}
 	return cfg, cfg.Validate()
+}
+
+func baseConfigFromKoanf(v *koanf.Koanf, defs defaultsFile) runconfig.BaseConfig {
+	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
+	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
+	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
+	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
+	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
+	defaultVectorPort := ptr.Deref(defs.Transport.VectorPort, runconfig.DefaultVectorPort)
+	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
+
+	return runconfig.BaseConfig{
+		Type:            resolveString(v, "type", defaultType),
+		API:             resolveString(v, "api", defs.API),
+		DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
+		SelectedSources: getList(v, "source"),
+		AllSources:      v.Bool("all-sources"),
+		Namespace:       resolveString(v, "namespace", defaultNamespace),
+		LabelSelector:   resolveString(v, "selector", defaultSelector),
+		KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
+		KubeContext:     resolveString(v, "context", defs.Cluster.Context),
+		Format:          resolveString(v, "format", defaultFormat),
+		VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
+		IncludeMeta:     resolveBool(v, "include-meta", new(defaultIncludeMeta)),
+	}
 }
 
 type defaultsFile struct {
