@@ -233,13 +233,31 @@ func (r *Runner) runKubernetesSource(
 				snapshots = nil
 				continue
 			}
-			desired = make(map[string]targets.Target, len(ts))
-			for _, target := range ts {
-				desired[target.ID] = target
-			}
+			desired = snapshotDesiredTargets(cfg, ts)
 			r.reconcileTapTargets(ctx, client, cfg, mux, fwd, active, desired, runtimeErrs, finishedTargets)
 		}
 	}
+}
+
+func snapshotDesiredTargets(cfg Config, ts []targets.Target) map[string]targets.Target {
+	if len(ts) == 0 {
+		source := cfg.SourceName
+		if source == "" {
+			source = "default"
+		}
+		_, _ = fmt.Fprintf(
+			os.Stderr,
+			"warning: no matching kubernetes pods for source=%q namespace=%q selector=%q\n",
+			source,
+			cfg.Namespace,
+			cfg.LabelSelector,
+		)
+	}
+	desired := make(map[string]targets.Target, len(ts))
+	for _, target := range ts {
+		desired[target.ID] = target
+	}
+	return desired
 }
 
 func (r *Runner) reconcileTapTargets(
