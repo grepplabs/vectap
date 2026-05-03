@@ -6,17 +6,20 @@ import (
 	"syscall"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
-	topology "github.com/grepplabs/vectap/internal/app/topology"
+	"github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-func newTopologyCmd(v *viper.Viper, newRunner newRunnerFunc) *cobra.Command {
+func newTopologyCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "topology",
 		Short: "Show Vector topology (inputs/transforms/outputs)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := topologyConfigFromViper(v, cliFlagSetFromContext(cmd.Context()))
+			k, err := koanfFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			cfg, err := topologyConfigFromKoanf(k)
 			if err != nil {
 				return err
 			}

@@ -2,31 +2,36 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	components "github.com/grepplabs/vectap/internal/app/components"
+	"github.com/grepplabs/vectap/internal/app/components"
 	"github.com/grepplabs/vectap/internal/app/runconfig"
-	tap "github.com/grepplabs/vectap/internal/app/tap"
-	topology "github.com/grepplabs/vectap/internal/app/topology"
+	"github.com/grepplabs/vectap/internal/app/tap"
+	"github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/grepplabs/vectap/internal/ptr"
-	"github.com/spf13/viper"
+	"github.com/knadh/koanf/v2"
 )
 
-func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, error) {
-	if cliFlagSet == nil {
-		cliFlagSet = func(string) bool { return false }
-	}
-
+func tapConfigFromKoanf(v *koanf.Koanf) (tap.Config, error) {
 	defs, err := loadDefaults(v)
 	if err != nil {
 		return tap.Config{}, err
 	}
 
-	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
-	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
-	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
+	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
+	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
+	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
+	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
+	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
+	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
+	defaultInterval := ptr.Default(ptr.Deref(defs.Transport.Interval, 0), runconfig.DefaultTapInterval)
+	defaultLimit := ptr.Default(ptr.Deref(defs.Transport.Limit, 0), runconfig.DefaultTapLimit)
+	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
+
+	topFormat := resolveString(v, "format", defaultFormat)
+	topAPI := resolveString(v, "api", defs.API)
+	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
 
 	sources, err := loadSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
@@ -35,31 +40,31 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 
 	cfg := tap.Config{
 		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			Type:            resolveString(v, "type", defaultType),
 			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
+			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
 			SelectedSources: getList(v, "source"),
-			AllSources:      v.GetBool("all-sources"),
-			Namespace:       resolveString(v, cliFlagSet, "namespace", defs.Discovery.Namespace),
-			LabelSelector:   resolveString(v, cliFlagSet, "selector", defs.Discovery.Selector),
-			KubeConfigPath:  resolveString(v, cliFlagSet, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, cliFlagSet, "context", defs.Cluster.Context),
+			AllSources:      v.Bool("all-sources"),
+			Namespace:       resolveString(v, "namespace", defaultNamespace),
+			LabelSelector:   resolveString(v, "selector", defaultSelector),
+			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
+			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
 			Format:          topFormat,
-			VectorPort:      resolveInt(v, cliFlagSet, "vector-port", defs.Transport.VectorPort),
+			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
 			IncludeMeta:     topIncludeMeta,
 		},
 		Sources: sources,
 		TapScopeConfig: tap.TapScopeConfig{
-			OutputsOf: resolveStringSliceList(v, cliFlagSet, "outputs-of", defs.OutputsOf),
-			InputsOf:  resolveStringSliceList(v, cliFlagSet, "inputs-of", defs.InputsOf),
-			Interval:  resolveInt(v, cliFlagSet, "interval", defs.Transport.Interval),
-			Limit:     resolveInt(v, cliFlagSet, "limit", defs.Transport.Limit),
-			Duration:  resolveDuration(v, cliFlagSet, "duration", ""),
+			OutputsOf: resolveStringSliceList(v, "outputs-of", defs.OutputsOf),
+			InputsOf:  resolveStringSliceList(v, "inputs-of", defs.InputsOf),
+			Interval:  resolveInt(v, "interval", new(defaultInterval)),
+			Limit:     resolveInt(v, "limit", new(defaultLimit)),
+			Duration:  resolveDuration(v, "duration", ""),
 		},
 		LocalFilters: tap.LocalFilters{},
-		NoColor:      v.GetBool("no-color"),
+		NoColor:      v.Bool("no-color"),
 	}
-	localFilters, err := parseLocalFilters(resolveStringSliceList(v, cliFlagSet, "local-filter", defs.LocalFilters))
+	localFilters, err := parseLocalFilters(resolveStringSliceList(v, "local-filter", defs.LocalFilters))
 	if err != nil {
 		return tap.Config{}, err
 	}
@@ -67,19 +72,23 @@ func tapConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (tap.Config, 
 	return cfg, cfg.Validate()
 }
 
-func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (components.Config, error) {
-	if cliFlagSet == nil {
-		cliFlagSet = func(string) bool { return false }
-	}
-
+func componentsConfigFromKoanf(v *koanf.Koanf) (components.Config, error) {
 	defs, err := loadDefaults(v)
 	if err != nil {
 		return components.Config{}, err
 	}
 
-	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
-	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
-	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
+	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
+	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
+	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
+	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
+	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
+	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
+	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
+
+	topFormat := resolveString(v, "format", defaultFormat)
+	topAPI := resolveString(v, "api", defs.API)
+	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
 	sources, err := loadComponentsSourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
 		return components.Config{}, err
@@ -87,17 +96,17 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 
 	cfg := components.Config{
 		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			Type:            resolveString(v, "type", defaultType),
 			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
+			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
 			SelectedSources: getList(v, "source"),
-			AllSources:      v.GetBool("all-sources"),
-			Namespace:       resolveString(v, cliFlagSet, "namespace", defs.Discovery.Namespace),
-			LabelSelector:   resolveString(v, cliFlagSet, "selector", defs.Discovery.Selector),
-			KubeConfigPath:  resolveString(v, cliFlagSet, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, cliFlagSet, "context", defs.Cluster.Context),
+			AllSources:      v.Bool("all-sources"),
+			Namespace:       resolveString(v, "namespace", defaultNamespace),
+			LabelSelector:   resolveString(v, "selector", defaultSelector),
+			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
+			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
 			Format:          topFormat,
-			VectorPort:      resolveInt(v, cliFlagSet, "vector-port", defs.Transport.VectorPort),
+			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
 			IncludeMeta:     topIncludeMeta,
 		},
 		Sources: sources,
@@ -105,19 +114,23 @@ func componentsConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (compo
 	return cfg, cfg.Validate()
 }
 
-func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topology.Config, error) {
-	if cliFlagSet == nil {
-		cliFlagSet = func(string) bool { return false }
-	}
-
+func topologyConfigFromKoanf(v *koanf.Koanf) (topology.Config, error) {
 	defs, err := loadDefaults(v)
 	if err != nil {
 		return topology.Config{}, err
 	}
 
-	topFormat := resolveString(v, cliFlagSet, "format", defs.Format)
-	topAPI := resolveString(v, cliFlagSet, "api", defs.API)
-	topIncludeMeta := resolveBool(v, cliFlagSet, "include-meta", defs.IncludeMeta)
+	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
+	defaultDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
+	defaultNamespace := ptr.Default(defs.Discovery.Namespace, runconfig.DefaultNamespace)
+	defaultSelector := ptr.Default(defs.Discovery.Selector, runconfig.DefaultSelector)
+	defaultFormat := ptr.Default(defs.Format, runconfig.FormatText)
+	defaultVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
+	defaultIncludeMeta := ptr.Deref(defs.IncludeMeta, runconfig.DefaultIncludeMeta)
+
+	topFormat := resolveString(v, "format", defaultFormat)
+	topAPI := resolveString(v, "api", defs.API)
+	topIncludeMeta := resolveBool(v, "include-meta", new(defaultIncludeMeta))
 	sources, err := loadTopologySourceConfigs(defs, v, topFormat, topIncludeMeta, topAPI)
 	if err != nil {
 		return topology.Config{}, err
@@ -125,82 +138,82 @@ func topologyConfigFromViper(v *viper.Viper, cliFlagSet cliFlagSetFunc) (topolog
 
 	cfg := topology.Config{
 		BaseConfig: runconfig.BaseConfig{
-			Type:            resolveString(v, cliFlagSet, "type", defs.Type),
+			Type:            resolveString(v, "type", defaultType),
 			API:             topAPI,
-			DirectURLs:      resolveStringSlice(v, cliFlagSet, "direct-url", defs.DirectURL),
+			DirectURLs:      resolveStringSlice(v, "direct-url", defaultDirectURL),
 			SelectedSources: getList(v, "source"),
-			AllSources:      v.GetBool("all-sources"),
-			Namespace:       resolveString(v, cliFlagSet, "namespace", defs.Discovery.Namespace),
-			LabelSelector:   resolveString(v, cliFlagSet, "selector", defs.Discovery.Selector),
-			KubeConfigPath:  resolveString(v, cliFlagSet, "kubeconfig", defs.Cluster.KubeConfig),
-			KubeContext:     resolveString(v, cliFlagSet, "context", defs.Cluster.Context),
+			AllSources:      v.Bool("all-sources"),
+			Namespace:       resolveString(v, "namespace", defaultNamespace),
+			LabelSelector:   resolveString(v, "selector", defaultSelector),
+			KubeConfigPath:  resolveString(v, "kubeconfig", defs.Cluster.KubeConfig),
+			KubeContext:     resolveString(v, "context", defs.Cluster.Context),
 			Format:          topFormat,
-			VectorPort:      resolveInt(v, cliFlagSet, "vector-port", defs.Transport.VectorPort),
+			VectorPort:      resolveInt(v, "vector-port", new(defaultVectorPort)),
 			IncludeMeta:     topIncludeMeta,
 		},
-		View:     resolveString(v, cliFlagSet, "view", topology.ViewTable),
-		Orphaned: resolveBool(v, cliFlagSet, "orphaned", new(false)),
+		View:     resolveString(v, "view", topology.ViewTable),
+		Orphaned: resolveBool(v, "orphaned", new(false)),
 		Sources:  sources,
 	}
 	return cfg, cfg.Validate()
 }
 
 type defaultsFile struct {
-	Type         string   `mapstructure:"type"`
-	API          string   `mapstructure:"api"`
-	DirectURL    string   `mapstructure:"direct_url"`
-	Format       string   `mapstructure:"format"`
-	OutputsOf    []string `mapstructure:"outputs_of"`
-	InputsOf     []string `mapstructure:"inputs_of"`
-	LocalFilters []string `mapstructure:"local_filters"`
+	Type         string   `koanf:"type"`
+	API          string   `koanf:"api"`
+	DirectURL    string   `koanf:"direct_url"`
+	Format       string   `koanf:"format"`
+	OutputsOf    []string `koanf:"outputs_of"`
+	InputsOf     []string `koanf:"inputs_of"`
+	LocalFilters []string `koanf:"local_filters"`
 	Cluster      struct {
-		KubeConfig string `mapstructure:"kubeconfig"`
-		Context    string `mapstructure:"context"`
-	} `mapstructure:"cluster"`
+		KubeConfig string `koanf:"kubeconfig"`
+		Context    string `koanf:"context"`
+	} `koanf:"cluster"`
 	Discovery struct {
-		Namespace string `mapstructure:"namespace"`
-		Selector  string `mapstructure:"selector"`
-	} `mapstructure:"discovery"`
+		Namespace string `koanf:"namespace"`
+		Selector  string `koanf:"selector"`
+	} `koanf:"discovery"`
 	Transport struct {
-		VectorPort *int `mapstructure:"vector_port"`
-		Interval   *int `mapstructure:"interval"`
-		Limit      *int `mapstructure:"limit"`
-	} `mapstructure:"transport"`
-	IncludeMeta *bool `mapstructure:"include_meta"`
+		VectorPort *int `koanf:"vector_port"`
+		Interval   *int `koanf:"interval"`
+		Limit      *int `koanf:"limit"`
+	} `koanf:"transport"`
+	IncludeMeta *bool `koanf:"include_meta"`
 }
 
 type sourceFile struct {
-	Name          string   `mapstructure:"name"`
-	Type          string   `mapstructure:"type"`
-	API           string   `mapstructure:"api"`
-	Enabled       *bool    `mapstructure:"enabled"`
-	Format        string   `mapstructure:"format"`
-	IncludeMeta   *bool    `mapstructure:"include_meta"`
-	OutputsOf     []string `mapstructure:"outputs_of"`
-	InputsOf      []string `mapstructure:"inputs_of"`
-	LocalFilter   []string `mapstructure:"local_filters"`
-	ApplyDefaults *bool    `mapstructure:"apply_defaults"`
+	Name          string   `koanf:"name"`
+	Type          string   `koanf:"type"`
+	API           string   `koanf:"api"`
+	Enabled       *bool    `koanf:"enabled"`
+	Format        string   `koanf:"format"`
+	IncludeMeta   *bool    `koanf:"include_meta"`
+	OutputsOf     []string `koanf:"outputs_of"`
+	InputsOf      []string `koanf:"inputs_of"`
+	LocalFilter   []string `koanf:"local_filters"`
+	ApplyDefaults *bool    `koanf:"apply_defaults"`
 	Cluster       struct {
-		KubeConfig string `mapstructure:"kubeconfig"`
-		Context    string `mapstructure:"context"`
-	} `mapstructure:"cluster"`
+		KubeConfig string `koanf:"kubeconfig"`
+		Context    string `koanf:"context"`
+	} `koanf:"cluster"`
 	Discovery struct {
-		Namespace string `mapstructure:"namespace"`
-		Selector  string `mapstructure:"selector"`
-	} `mapstructure:"discovery"`
+		Namespace string `koanf:"namespace"`
+		Selector  string `koanf:"selector"`
+	} `koanf:"discovery"`
 	Transport struct {
-		VectorPort *int `mapstructure:"vector_port"`
-		Interval   *int `mapstructure:"interval"`
-		Limit      *int `mapstructure:"limit"`
-	} `mapstructure:"transport"`
+		VectorPort *int `koanf:"vector_port"`
+		Interval   *int `koanf:"interval"`
+		Limit      *int `koanf:"limit"`
+	} `koanf:"transport"`
 	Endpoint struct {
-		URL string `mapstructure:"url"`
-	} `mapstructure:"endpoint"`
+		URL string `koanf:"url"`
+	} `koanf:"endpoint"`
 }
 
-func loadDefaults(v *viper.Viper) (defaultsFile, error) {
+func loadDefaults(v *koanf.Koanf) (defaultsFile, error) {
 	var defs defaultsFile
-	if err := v.UnmarshalKey("defaults", &defs); err != nil {
+	if err := v.Unmarshal("defaults", &defs); err != nil {
 		return defaultsFile{}, fmt.Errorf("decode defaults: %w", err)
 	}
 	defs.API = ptr.Default(defs.API, string(runconfig.VectorDefaultAPI))
@@ -208,7 +221,7 @@ func loadDefaults(v *viper.Viper) (defaultsFile, error) {
 }
 
 //nolint:funlen
-func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]tap.SourceConfig, error) {
+func loadSourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]tap.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -219,7 +232,7 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 	fallbackLimit := ptr.Default(ptr.Deref(defs.Transport.Limit, 0), runconfig.DefaultTapLimit)
 
 	var srcFiles []sourceFile
-	if err := v.UnmarshalKey("sources", &srcFiles); err != nil {
+	if err := v.Unmarshal("sources", &srcFiles); err != nil {
 		return nil, fmt.Errorf("decode sources: %w", err)
 	}
 	out := make([]tap.SourceConfig, 0, len(srcFiles))
@@ -284,7 +297,7 @@ func loadSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, 
 	return out, nil
 }
 
-func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]components.SourceConfig, error) {
+func loadComponentsSourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]components.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -293,7 +306,7 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 	fallbackVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
 
 	var srcFiles []sourceFile
-	if err := v.UnmarshalKey("sources", &srcFiles); err != nil {
+	if err := v.Unmarshal("sources", &srcFiles); err != nil {
 		return nil, fmt.Errorf("decode sources: %w", err)
 	}
 	out := make([]components.SourceConfig, 0, len(srcFiles))
@@ -338,7 +351,7 @@ func loadComponentsSourceConfigs(defs defaultsFile, v *viper.Viper, defaultForma
 	return out, nil
 }
 
-func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]topology.SourceConfig, error) {
+func loadTopologySourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]topology.SourceConfig, error) {
 	defaultType := ptr.Default(defs.Type, runconfig.SourceTypeDirect)
 	fallbackDirectURL := ptr.Default(defs.DirectURL, runconfig.DefaultDirectURL)
 	defaultFormat = ptr.Default(defaultFormat, runconfig.FormatText)
@@ -347,7 +360,7 @@ func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat 
 	fallbackVectorPort := ptr.Default(ptr.Deref(defs.Transport.VectorPort, 0), runconfig.DefaultVectorPort)
 
 	var srcFiles []sourceFile
-	if err := v.UnmarshalKey("sources", &srcFiles); err != nil {
+	if err := v.Unmarshal("sources", &srcFiles); err != nil {
 		return nil, fmt.Errorf("decode sources: %w", err)
 	}
 	out := make([]topology.SourceConfig, 0, len(srcFiles))
@@ -394,19 +407,19 @@ func loadTopologySourceConfigs(defs defaultsFile, v *viper.Viper, defaultFormat 
 	return out, nil
 }
 
-func resolveString(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaultsValue string) string {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
-		return v.GetString(key)
+func resolveString(v *koanf.Koanf, key, defaultsValue string) string {
+	if v.Exists(key) {
+		return v.String(key)
 	}
 	if defaultsValue != "" {
 		return defaultsValue
 	}
-	return v.GetString(key)
+	return v.String(key)
 }
 
 //nolint:unparam
-func resolveStringSlice(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaultsValue string) []string {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
+func resolveStringSlice(v *koanf.Koanf, key, defaultsValue string) []string {
+	if v.Exists(key) {
 		return getList(v, key)
 	}
 	if defaultsValue != "" {
@@ -415,8 +428,8 @@ func resolveStringSlice(v *viper.Viper, cliFlagSet cliFlagSetFunc, key, defaults
 	return getList(v, key)
 }
 
-func resolveStringSliceList(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue []string) []string {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
+func resolveStringSliceList(v *koanf.Koanf, key string, defaultsValue []string) []string {
+	if v.Exists(key) {
 		return getList(v, key)
 	}
 	if len(defaultsValue) > 0 {
@@ -425,28 +438,28 @@ func resolveStringSliceList(v *viper.Viper, cliFlagSet cliFlagSetFunc, key strin
 	return getList(v, key)
 }
 
-func resolveInt(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue *int) int {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
-		return v.GetInt(key)
+func resolveInt(v *koanf.Koanf, key string, defaultsValue *int) int {
+	if v.Exists(key) {
+		return v.Int(key)
 	}
 	if defaultsValue != nil {
 		return *defaultsValue
 	}
-	return v.GetInt(key)
+	return v.Int(key)
 }
 
-func resolveBool(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue *bool) bool {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
-		return v.GetBool(key)
+func resolveBool(v *koanf.Koanf, key string, defaultsValue *bool) bool {
+	if v.Exists(key) {
+		return v.Bool(key)
 	}
 	if defaultsValue != nil {
 		return *defaultsValue
 	}
-	return v.GetBool(key)
+	return v.Bool(key)
 }
 
-func resolveDuration(v *viper.Viper, cliFlagSet cliFlagSetFunc, key string, defaultsValue string) time.Duration {
-	if cliFlagSet(key) || v.InConfig(key) || envSetForKey(key) {
+func resolveDuration(v *koanf.Koanf, key string, defaultsValue string) time.Duration {
+	if v.Exists(key) {
 		d, err := parseDurationValue(v.Get(key))
 		if err == nil {
 			return d
@@ -492,14 +505,24 @@ func parseDurationString(value string) (time.Duration, error) {
 	return d, nil
 }
 
-func envSetForKey(key string) bool {
-	name := "VECTAP_" + strings.ToUpper(strings.ReplaceAll(key, "-", "_"))
-	_, ok := os.LookupEnv(name)
-	return ok
-}
-
-func getList(v *viper.Viper, key string) []string {
-	return splitCSVSlice(v.GetStringSlice(key))
+func getList(v *koanf.Koanf, key string) []string {
+	raw := v.Get(key)
+	switch vv := raw.(type) {
+	case nil:
+		return nil
+	case string:
+		return splitCSVSlice([]string{vv})
+	case []string:
+		return splitCSVSlice(vv)
+	case []any:
+		out := make([]string, 0, len(vv))
+		for _, item := range vv {
+			out = append(out, fmt.Sprint(item))
+		}
+		return splitCSVSlice(out)
+	default:
+		return splitCSVSlice([]string{fmt.Sprint(raw)})
+	}
 }
 
 func splitCSVSlice(in []string) []string {

@@ -7,15 +7,18 @@ import (
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-func newComponentsCmd(v *viper.Viper, newRunner newRunnerFunc) *cobra.Command {
+func newComponentsCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "components",
 		Short: "List Vector components",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := componentsConfigFromViper(v, cliFlagSetFromContext(cmd.Context()))
+			k, err := koanfFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			cfg, err := componentsConfigFromKoanf(k)
 			if err != nil {
 				return err
 			}
