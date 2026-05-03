@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tap "github.com/grepplabs/vectap/internal/app/tap"
+	"github.com/grepplabs/vectap/internal/app/tap"
 )
 
 //nolint:cyclop

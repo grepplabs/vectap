@@ -5,55 +5,62 @@ import (
 	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
-	"github.com/spf13/viper"
+	"github.com/knadh/koanf/v2"
 	"github.com/stretchr/testify/require"
 )
 
-func TestTapConfigFromViperDefaultAPIResolution(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", runconfig.SourceTypeDirect)
-	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
-	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
-	v.Set("defaults.format", runconfig.FormatText)
-	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
-	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
-	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
+func setK(k *koanf.Koanf, key string, value any) {
+	err := k.Set(key, value)
+	if err != nil {
+		panic(err)
+	}
+}
 
-	cfg, err := tapConfigFromViper(v, nil)
+func TestTapConfigFromKoanfDefaultAPIResolution(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", runconfig.SourceTypeDirect)
+	setK(v, "defaults.direct_url", runconfig.DefaultDirectURL)
+	setK(v, "defaults.discovery.namespace", runconfig.DefaultNamespace)
+	setK(v, "defaults.format", runconfig.FormatText)
+	setK(v, "defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	setK(v, "defaults.transport.interval", runconfig.DefaultTapInterval)
+	setK(v, "defaults.transport.limit", runconfig.DefaultTapLimit)
+
+	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, string(runconfig.VectorDefaultAPI), cfg.API)
 }
 
-func TestTapConfigFromViperCLIOverridesDefaultAPI(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", runconfig.SourceTypeDirect)
-	v.Set("defaults.api", string(runconfig.VectorAPIGraphQL))
-	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
-	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
-	v.Set("defaults.format", runconfig.FormatText)
-	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
-	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
-	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
-	v.Set("api", string(runconfig.VectorAPIGrpc))
+func TestTapConfigFromKoanfCLIOverridesDefaultAPI(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", runconfig.SourceTypeDirect)
+	setK(v, "defaults.api", string(runconfig.VectorAPIGraphQL))
+	setK(v, "defaults.direct_url", runconfig.DefaultDirectURL)
+	setK(v, "defaults.discovery.namespace", runconfig.DefaultNamespace)
+	setK(v, "defaults.format", runconfig.FormatText)
+	setK(v, "defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	setK(v, "defaults.transport.interval", runconfig.DefaultTapInterval)
+	setK(v, "defaults.transport.limit", runconfig.DefaultTapLimit)
+	setK(v, "api", string(runconfig.VectorAPIGrpc))
 
-	cfg, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, string(runconfig.VectorAPIGrpc), cfg.API)
 }
 
-func TestTapConfigFromViperPerSourceAPIOverridesTopLevel(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", runconfig.SourceTypeDirect)
-	v.Set("defaults.api", string(runconfig.VectorAPIGraphQL))
-	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
-	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
-	v.Set("defaults.format", runconfig.FormatText)
-	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
-	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
-	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
-	v.Set("api", string(runconfig.VectorAPIGrpc))
-	v.Set("all-sources", true)
-	v.Set("sources", []map[string]any{
+func TestTapConfigFromKoanfPerSourceAPIOverridesTopLevel(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", runconfig.SourceTypeDirect)
+	setK(v, "defaults.api", string(runconfig.VectorAPIGraphQL))
+	setK(v, "defaults.direct_url", runconfig.DefaultDirectURL)
+	setK(v, "defaults.discovery.namespace", runconfig.DefaultNamespace)
+	setK(v, "defaults.format", runconfig.FormatText)
+	setK(v, "defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	setK(v, "defaults.transport.interval", runconfig.DefaultTapInterval)
+	setK(v, "defaults.transport.limit", runconfig.DefaultTapLimit)
+	setK(v, "api", string(runconfig.VectorAPIGrpc))
+	setK(v, "all-sources", true)
+	setK(v, "sources", []map[string]any{
 		{
 			"name": "src-a",
 			"type": runconfig.SourceTypeDirect,
@@ -64,50 +71,50 @@ func TestTapConfigFromViperPerSourceAPIOverridesTopLevel(t *testing.T) {
 		},
 	})
 
-	cfg, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, string(runconfig.VectorAPIGrpc), cfg.API)
 	require.Len(t, cfg.Sources, 1)
 	require.Equal(t, string(runconfig.VectorAPIGraphQL), cfg.Sources[0].API)
 }
 
-func TestTapConfigFromViperRejectsInvalidAPI(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", runconfig.SourceTypeDirect)
-	v.Set("defaults.direct_url", runconfig.DefaultDirectURL)
-	v.Set("defaults.discovery.namespace", runconfig.DefaultNamespace)
-	v.Set("defaults.format", runconfig.FormatText)
-	v.Set("defaults.transport.vector_port", runconfig.DefaultVectorPort)
-	v.Set("defaults.transport.interval", runconfig.DefaultTapInterval)
-	v.Set("defaults.transport.limit", runconfig.DefaultTapLimit)
-	v.Set("api", "bad-api")
+func TestTapConfigFromKoanfRejectsInvalidAPI(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", runconfig.SourceTypeDirect)
+	setK(v, "defaults.direct_url", runconfig.DefaultDirectURL)
+	setK(v, "defaults.discovery.namespace", runconfig.DefaultNamespace)
+	setK(v, "defaults.format", runconfig.FormatText)
+	setK(v, "defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	setK(v, "defaults.transport.interval", runconfig.DefaultTapInterval)
+	setK(v, "defaults.transport.limit", runconfig.DefaultTapLimit)
+	setK(v, "api", "bad-api")
 
-	_, err := tapConfigFromViper(v, func(name string) bool { return name == "api" })
+	_, err := tapConfigFromKoanf(v)
 	require.EqualError(t, err, `unsupported api "bad-api"`)
 }
 
-func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", "kubernetes")
-	v.Set("defaults.direct_url", "http://10.0.0.1:8686/graphql")
-	v.Set("defaults.discovery.namespace", "obs")
-	v.Set("defaults.discovery.selector", "app=vector")
-	v.Set("defaults.cluster.kubeconfig", "/tmp/kubeconfig")
-	v.Set("defaults.cluster.context", "prod-eu")
-	v.Set("defaults.format", "json")
-	v.Set("defaults.transport.vector_port", 9777)
-	v.Set("defaults.transport.interval", 750)
-	v.Set("defaults.transport.limit", 250)
-	v.Set("duration", "45s")
-	v.Set("defaults.include_meta", false)
-	v.Set("defaults.outputs_of", []string{"*"})
-	v.Set("defaults.inputs_of", []string{"sink.default"})
-	v.Set("defaults.local_filters", []string{"+component.kind:sink"})
-	v.Set("sources", []map[string]any{
+func TestTapConfigFromKoanfDefaultsFallback(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", "kubernetes")
+	setK(v, "defaults.direct_url", "http://10.0.0.1:8686/graphql")
+	setK(v, "defaults.discovery.namespace", "obs")
+	setK(v, "defaults.discovery.selector", "app=vector")
+	setK(v, "defaults.cluster.kubeconfig", "/tmp/kubeconfig")
+	setK(v, "defaults.cluster.context", "prod-eu")
+	setK(v, "defaults.format", "json")
+	setK(v, "defaults.transport.vector_port", 9777)
+	setK(v, "defaults.transport.interval", 750)
+	setK(v, "defaults.transport.limit", 250)
+	setK(v, "duration", "45s")
+	setK(v, "defaults.include_meta", false)
+	setK(v, "defaults.outputs_of", []string{"*"})
+	setK(v, "defaults.inputs_of", []string{"sink.default"})
+	setK(v, "defaults.local_filters", []string{"+component.kind:sink"})
+	setK(v, "sources", []map[string]any{
 		{"name": "eu", "type": "kubernetes"},
 	})
 
-	cfg, err := tapConfigFromViper(v, nil)
+	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, runconfig.SourceTypeKubernetes, cfg.Type)
 	require.Equal(t, []string{"http://10.0.0.1:8686/graphql"}, cfg.DirectURLs)
@@ -126,33 +133,24 @@ func TestTapConfigFromViperDefaultsFallback(t *testing.T) {
 	require.Equal(t, []string{"sink"}, cfg.LocalFilters.ComponentKind.IncludeGlob)
 }
 
-func TestTapConfigFromViperCLIOverridesDefaults(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", "direct")
-	v.Set("defaults.direct_url", "http://127.0.0.1:8686/graphql")
-	v.Set("defaults.discovery.namespace", "default")
-	v.Set("defaults.format", "json")
-	v.Set("defaults.include_meta", false)
-	v.Set("defaults.transport.vector_port", 9777)
-	v.Set("defaults.transport.interval", 750)
-	v.Set("defaults.transport.limit", 250)
-	v.Set("format", "text")
-	v.Set("include-meta", true)
-	v.Set("vector-port", 8686)
-	v.Set("interval", 500)
-	v.Set("limit", 100)
-	v.Set("duration", "30s")
+func TestTapConfigFromKoanfCLIOverridesDefaults(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", "direct")
+	setK(v, "defaults.direct_url", "http://127.0.0.1:8686/graphql")
+	setK(v, "defaults.discovery.namespace", "default")
+	setK(v, "defaults.format", "json")
+	setK(v, "defaults.include_meta", false)
+	setK(v, "defaults.transport.vector_port", 9777)
+	setK(v, "defaults.transport.interval", 750)
+	setK(v, "defaults.transport.limit", 250)
+	setK(v, "format", "text")
+	setK(v, "include-meta", true)
+	setK(v, "vector-port", 8686)
+	setK(v, "interval", 500)
+	setK(v, "limit", 100)
+	setK(v, "duration", "30s")
 
-	flagSet := func(name string) bool {
-		switch name {
-		case "format", "include-meta", "vector-port", "interval", "limit", "duration":
-			return true
-		default:
-			return false
-		}
-	}
-
-	cfg, err := tapConfigFromViper(v, flagSet)
+	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, runconfig.FormatText, cfg.Format)
 	require.True(t, cfg.IncludeMeta)
@@ -163,7 +161,7 @@ func TestTapConfigFromViperCLIOverridesDefaults(t *testing.T) {
 }
 
 func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
-	v := viper.New()
+	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeKubernetes
 	defs.DirectURL = "http://127.0.0.1:8686/graphql"
@@ -174,7 +172,7 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 	defs.Transport.Limit = new(100)
 	defs.Cluster.Context = "default-ctx"
 
-	v.Set("sources", []map[string]any{
+	setK(v, "sources", []map[string]any{
 		{
 			"name":         "kube-a",
 			"type":         "kubernetes",
@@ -227,7 +225,7 @@ func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 }
 
 func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
-	v := viper.New()
+	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeDirect
 	defs.DirectURL = runconfig.DefaultDirectURL
@@ -237,7 +235,7 @@ func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
 	defs.Transport.Interval = new(runconfig.DefaultTapInterval)
 	defs.Transport.Limit = new(runconfig.DefaultTapLimit)
 
-	v.Set("sources", []map[string]any{
+	setK(v, "sources", []map[string]any{
 		{
 			"name":           "src-a",
 			"type":           "direct",
@@ -258,7 +256,7 @@ func TestLoadSourceConfigsPerSourceFieldsAndApplyDefaultsToggle(t *testing.T) {
 }
 
 func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
-	v := viper.New()
+	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeDirect
 	defs.DirectURL = runconfig.DefaultDirectURL
@@ -268,7 +266,7 @@ func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
 	defs.Transport.Interval = new(runconfig.DefaultTapInterval)
 	defs.Transport.Limit = new(runconfig.DefaultTapLimit)
 
-	v.Set("sources", []map[string]any{
+	setK(v, "sources", []map[string]any{
 		{
 			"name":          "src-a",
 			"type":          "direct",
@@ -280,35 +278,34 @@ func TestLoadSourceConfigsInvalidSourceLocalFilter(t *testing.T) {
 	require.EqualError(t, err, `source "src-a": invalid local-filter "+unknown.field:x": unsupported field "unknown.field"`)
 }
 
-func TestResolveHelpersUseDefaultsWhenNoCLIConfigEnv(t *testing.T) {
-	v := viper.New()
-	none := func(string) bool { return false }
+func TestResolveHelpersUseDefaultsWhenNoInput(t *testing.T) {
+	v := koanf.New(".")
 
-	require.Equal(t, "json", resolveString(v, none, "format", "json"))
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, resolveStringSlice(v, none, "direct-url", "http://127.0.0.1:8686/graphql"))
-	require.Equal(t, 9999, resolveInt(v, none, "vector-port", new(9999)))
-	require.Equal(t, 500, resolveInt(v, none, "interval", new(500)))
-	require.Equal(t, 100, resolveInt(v, none, "limit", new(100)))
-	require.Equal(t, 30*time.Second, resolveDuration(v, none, "duration", "30s"))
-	require.True(t, resolveBool(v, none, "include-meta", new(true)))
+	require.Equal(t, "json", resolveString(v, "format", "json"))
+	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, resolveStringSlice(v, "direct-url", "http://127.0.0.1:8686/graphql"))
+	require.Equal(t, 9999, resolveInt(v, "vector-port", new(9999)))
+	require.Equal(t, 500, resolveInt(v, "interval", new(500)))
+	require.Equal(t, 100, resolveInt(v, "limit", new(100)))
+	require.Equal(t, 30*time.Second, resolveDuration(v, "duration", "30s"))
+	require.True(t, resolveBool(v, "include-meta", new(true)))
 }
 
-func TestComponentsConfigFromViperDefaultsFallback(t *testing.T) {
-	v := viper.New()
-	v.Set("defaults.type", "kubernetes")
-	v.Set("defaults.direct_url", "http://10.0.0.1:8686/graphql")
-	v.Set("defaults.discovery.namespace", "obs")
-	v.Set("defaults.discovery.selector", "app=vector")
-	v.Set("defaults.cluster.kubeconfig", "/tmp/kubeconfig")
-	v.Set("defaults.cluster.context", "prod-eu")
-	v.Set("defaults.format", "yaml")
-	v.Set("defaults.transport.vector_port", 9777)
-	v.Set("defaults.include_meta", false)
-	v.Set("sources", []map[string]any{
+func TestComponentsConfigFromKoanfDefaultsFallback(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", "kubernetes")
+	setK(v, "defaults.direct_url", "http://10.0.0.1:8686/graphql")
+	setK(v, "defaults.discovery.namespace", "obs")
+	setK(v, "defaults.discovery.selector", "app=vector")
+	setK(v, "defaults.cluster.kubeconfig", "/tmp/kubeconfig")
+	setK(v, "defaults.cluster.context", "prod-eu")
+	setK(v, "defaults.format", "yaml")
+	setK(v, "defaults.transport.vector_port", 9777)
+	setK(v, "defaults.include_meta", false)
+	setK(v, "sources", []map[string]any{
 		{"name": "eu", "type": "kubernetes"},
 	})
 
-	cfg, err := componentsConfigFromViper(v, nil)
+	cfg, err := componentsConfigFromKoanf(v)
 	require.NoError(t, err)
 	require.Equal(t, runconfig.SourceTypeKubernetes, cfg.Type)
 	require.Equal(t, []string{"http://10.0.0.1:8686/graphql"}, cfg.DirectURLs)
@@ -322,7 +319,7 @@ func TestComponentsConfigFromViperDefaultsFallback(t *testing.T) {
 }
 
 func TestLoadComponentsSourceConfigsSourceOverrides(t *testing.T) {
-	v := viper.New()
+	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeKubernetes
 	defs.DirectURL = "http://127.0.0.1:8686/graphql"
@@ -331,7 +328,7 @@ func TestLoadComponentsSourceConfigsSourceOverrides(t *testing.T) {
 	defs.Transport.VectorPort = new(8686)
 	defs.Cluster.Context = "default-ctx"
 
-	v.Set("sources", []map[string]any{
+	setK(v, "sources", []map[string]any{
 		{
 			"name":         "kube-a",
 			"type":         "kubernetes",

@@ -7,15 +7,18 @@ import (
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-func newTapCmd(v *viper.Viper, newRunner newRunnerFunc) *cobra.Command {
+func newTapCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tap",
 		Short: "Tap events from Vector instances",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := tapConfigFromViper(v, cliFlagSetFromContext(cmd.Context()))
+			k, err := koanfFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			cfg, err := tapConfigFromKoanf(k)
 			if err != nil {
 				return err
 			}
