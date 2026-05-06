@@ -40,6 +40,21 @@ func TestTagFieldsMatcherComponentKindTypeHostRules(t *testing.T) {
 	require.False(t, m.Allow(blockedHost))
 }
 
+func TestTagFieldsMatcherNestedMessageFieldsTags(t *testing.T) {
+	m, err := NewTagFieldsMatcher(
+		TagFieldRules{},
+		TagFieldRules{IncludeRE: []string{"^sink$"}},
+		TagFieldRules{IncludeGlob: []string{"aws_*"}},
+		TagFieldRules{ExcludeGlob: []string{"vector-1"}},
+	)
+	require.NoError(t, err)
+
+	ev := output.Event{Message: `{"message":{"fields":{"tags":{"component_kind":"sink","component_type":"aws_s3","host":"vector-0"}}}}`}
+	require.True(t, m.Allow(ev))
+	blockedHost := output.Event{Message: `{"message":{"fields":{"tags":{"component_kind":"sink","component_type":"aws_s3","host":"vector-1"}}}}`}
+	require.False(t, m.Allow(blockedHost))
+}
+
 func TestTagFieldsMatcherInvalidRegex(t *testing.T) {
 	_, err := NewTagFieldsMatcher(TagFieldRules{IncludeRE: []string{"["}}, TagFieldRules{}, TagFieldRules{}, TagFieldRules{})
 	require.Error(t, err)

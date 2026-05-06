@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
+	"github.com/grepplabs/vectap/internal/vectorapi"
 )
 
 type Config struct {
@@ -18,11 +19,13 @@ type Config struct {
 }
 
 type TapScopeConfig struct {
-	OutputsOf []string
-	InputsOf  []string
-	Interval  int
-	Limit     int
-	Duration  time.Duration
+	OutputsOf  []string
+	InputsOf   []string
+	EventKinds []string
+	RawFormat  bool
+	Interval   int
+	Limit      int
+	Duration   time.Duration
 }
 
 type LocalFilters struct {
@@ -62,6 +65,9 @@ func (c Config) Validate() error {
 	if c.Duration < 0 {
 		return errors.New("duration must be greater than or equal to 0")
 	}
+	if err := validateEventKinds(c.EventKinds); err != nil {
+		return err
+	}
 	for _, s := range c.Sources {
 		if err := s.Validate(); err != nil {
 			return err
@@ -85,6 +91,26 @@ func (s SourceConfig) Validate() error {
 	}
 	if err := runconfig.ValidatePositive(s.Name, "limit", s.Limit); err != nil {
 		return err
+	}
+	if err := validateEventKinds(s.EventKinds); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateEventKinds(kinds []string) error {
+	for _, kind := range kinds {
+		switch kind {
+		case vectorapi.EventKindLog, vectorapi.EventKindMetric, vectorapi.EventKindTrace:
+		default:
+			return fmt.Errorf(
+				"unsupported event kind %q (allowed: %s|%s|%s)",
+				kind,
+				vectorapi.EventKindLog,
+				vectorapi.EventKindMetric,
+				vectorapi.EventKindTrace,
+			)
+		}
 	}
 	return nil
 }

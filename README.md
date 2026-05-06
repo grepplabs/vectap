@@ -34,7 +34,7 @@ It is designed to:
 
 ## Modes
 
-- `direct`: connect to one or more explicit Vector GraphQL endpoints with `--direct-url`
+- `direct`: connect to one or more explicit Vector API endpoints with `--direct-url`
 - `kubernetes`: discover matching pods with `--namespace` and `--selector`, then port-forward to each target automatically
 - `config`: load multiple named sources from `vectap.yaml` and run them with `--source` or `--all-sources`
 
@@ -45,7 +45,7 @@ Direct endpoint:
 ```bash
 go mod tidy
 go test ./...
-go run ./cmd/vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql
+go run ./cmd/vectap tap --type direct --direct-url http://127.0.0.1:8686
 ```
 
 Kubernetes discovery:
@@ -60,9 +60,9 @@ go run ./cmd/vectap version
 ### Direct endpoint
 
 ```bash
-vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql
-vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --format json
-vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --duration 30s
+vectap tap --type direct --direct-url http://127.0.0.1:8686
+vectap tap --type direct --direct-url http://127.0.0.1:8686 --format json
+vectap tap --type direct --direct-url http://127.0.0.1:8686 --duration 30s
 ```
 
 ### Kubernetes discovery
@@ -109,7 +109,7 @@ sources:
     type: direct
     apply_defaults: false
     endpoint:
-      url: http://127.0.0.1:8686/graphql
+      url: http://127.0.0.1:8686
     outputs_of:
       - source.my_logs
     inputs_of:
@@ -162,7 +162,7 @@ vectap tap --api grpc --type kubernetes -n observability -l app=vector
 Examples:
 
 ```bash
-vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql --interval 500 --limit 100 --duration 45s
+vectap tap --type direct --direct-url http://127.0.0.1:8686 --interval 500 --limit 100 --duration 45s
 vectap tap --type kubernetes -n observability -l app=vector --outputs-of source.my_logs --duration 2m30s
 ```
 
@@ -313,7 +313,7 @@ for all tap flags (for example `VECTAP_NAMESPACE`, `VECTAP_SELECTOR`, and
 
 ```bash
 VECTAP_TYPE=kubernetes VECTAP_NAMESPACE=observability VECTAP_SELECTOR=app=vector vectap tap
-VECTAP_DURATION=90s vectap tap --type direct --direct-url http://127.0.0.1:8686/graphql
+VECTAP_DURATION=90s vectap tap --type direct --direct-url http://127.0.0.1:8686
 ```
 
 ## Real-world example

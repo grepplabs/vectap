@@ -10,6 +10,7 @@ import (
 	"github.com/grepplabs/vectap/internal/app/tap"
 	"github.com/grepplabs/vectap/internal/app/topology"
 	"github.com/grepplabs/vectap/internal/ptr"
+	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/knadh/koanf/v2"
 )
 
@@ -31,11 +32,13 @@ func tapConfigFromKoanf(v *koanf.Koanf) (tap.Config, error) {
 		BaseConfig: baseConfig,
 		Sources:    sources,
 		TapScopeConfig: tap.TapScopeConfig{
-			OutputsOf: resolveStringSliceList(v, "outputs-of", defs.OutputsOf),
-			InputsOf:  resolveStringSliceList(v, "inputs-of", defs.InputsOf),
-			Interval:  resolveInt(v, "interval", new(defaultInterval)),
-			Limit:     resolveInt(v, "limit", new(defaultLimit)),
-			Duration:  resolveDuration(v, "duration", ""),
+			OutputsOf:  resolveStringSliceList(v, "outputs-of", defs.OutputsOf),
+			InputsOf:   resolveStringSliceList(v, "inputs-of", defs.InputsOf),
+			EventKinds: resolveEventKinds(v, "event-kind", defs.EventKinds),
+			RawFormat:  resolveBool(v, "raw-format", defs.RawFormat),
+			Interval:   resolveInt(v, "interval", new(defaultInterval)),
+			Limit:      resolveInt(v, "limit", new(defaultLimit)),
+			Duration:   resolveDuration(v, "duration", ""),
 		},
 		LocalFilters: tap.LocalFilters{},
 		NoColor:      v.Bool("no-color"),
@@ -119,6 +122,8 @@ type defaultsFile struct {
 	Format       string   `koanf:"format"`
 	OutputsOf    []string `koanf:"outputs_of"`
 	InputsOf     []string `koanf:"inputs_of"`
+	EventKinds   []string `koanf:"event_kinds"`
+	RawFormat    *bool    `koanf:"raw_format"`
 	LocalFilters []string `koanf:"local_filters"`
 	Cluster      struct {
 		KubeConfig string `koanf:"kubeconfig"`
@@ -145,6 +150,8 @@ type sourceFile struct {
 	IncludeMeta   *bool    `koanf:"include_meta"`
 	OutputsOf     []string `koanf:"outputs_of"`
 	InputsOf      []string `koanf:"inputs_of"`
+	EventKinds    []string `koanf:"event_kinds"`
+	RawFormat     *bool    `koanf:"raw_format"`
 	LocalFilter   []string `koanf:"local_filters"`
 	ApplyDefaults *bool    `koanf:"apply_defaults"`
 	Cluster       struct {
@@ -198,6 +205,8 @@ func loadSourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, 
 		includeMeta := ptr.Deref(s.IncludeMeta, sourceDefaultIncludeMeta)
 		outputsOf := splitCSVSlice(append([]string{}, s.OutputsOf...))
 		inputsOf := splitCSVSlice(append([]string{}, s.InputsOf...))
+		eventKinds := normalizeEventKinds(s.EventKinds, false)
+		rawFormat := ptr.Deref(s.RawFormat, ptr.Deref(defs.RawFormat, false))
 		localFilterRules := splitCSVSlice(append([]string{}, s.LocalFilter...))
 		localFilters, err := parseLocalFilters(localFilterRules)
 		if err != nil {
@@ -239,10 +248,12 @@ func loadSourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, 
 				IncludeMeta:    includeMeta,
 			},
 			TapScopeConfig: tap.TapScopeConfig{
-				OutputsOf: outputsOf,
-				InputsOf:  inputsOf,
-				Interval:  interval,
-				Limit:     limit,
+				OutputsOf:  outputsOf,
+				InputsOf:   inputsOf,
+				EventKinds: eventKinds,
+				RawFormat:  rawFormat,
+				Interval:   interval,
+				Limit:      limit,
 			},
 			LocalFilters:  localFilters,
 			ApplyDefaults: applyDefaults,
@@ -390,6 +401,40 @@ func resolveStringSliceList(v *koanf.Koanf, key string, defaultsValue []string) 
 		return splitCSVSlice(append([]string{}, defaultsValue...))
 	}
 	return getList(v, key)
+}
+
+func resolveEventKinds(v *koanf.Koanf, key string, defaultsValue []string) []string {
+	var kinds []string
+	if v.Exists(key) {
+		kinds = getList(v, key)
+	} else {
+		kinds = append([]string{}, defaultsValue...)
+	}
+	return normalizeEventKinds(kinds, true)
+}
+
+func normalizeEventKinds(kinds []string, defaultLog bool) []string {
+	raw := splitCSVSlice(append([]string{}, kinds...))
+	if len(raw) == 0 && defaultLog {
+		return []string{vectorapi.EventKindLog}
+	}
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, kind := range raw {
+		normalized := strings.ToLower(strings.TrimSpace(kind))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 && defaultLog {
+		return []string{vectorapi.EventKindLog}
+	}
+	return out
 }
 
 func resolveInt(v *koanf.Koanf, key string, defaultsValue *int) int {

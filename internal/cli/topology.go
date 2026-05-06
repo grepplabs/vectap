@@ -33,7 +33,7 @@ func newTopologyCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd.Flags().StringP("selector", "l", runconfig.DefaultSelector, "label selector")
 	cmd.Flags().String("type", runconfig.SourceTypeDirect, "source type: direct|kubernetes")
 	cmd.Flags().String("api", string(runconfig.VectorDefaultAPI), "vector API protocol: graphql|grpc")
-	cmd.Flags().StringSlice("direct-url", []string{runconfig.DefaultDirectURL}, "direct Vector GraphQL endpoint URL(s) (repeatable and/or comma-separated)")
+	cmd.Flags().StringSlice("direct-url", []string{runconfig.DefaultDirectURL}, "direct Vector API endpoint URL(s) (repeatable and/or comma-separated)")
 	cmd.Flags().StringSlice("source", nil, "source names from config to run (repeatable and/or comma-separated)")
 	cmd.Flags().Bool("all-sources", false, "run all enabled sources from config")
 	cmd.Flags().String("kubeconfig", "", "path to kubeconfig file")

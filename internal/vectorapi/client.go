@@ -9,6 +9,8 @@ import (
 type TapRequest struct {
 	OutputsOf   []string
 	InputsOf    []string
+	EventKinds  []string
+	RawFormat   bool
 	Interval    int
 	Limit       int
 	IncludeMeta bool

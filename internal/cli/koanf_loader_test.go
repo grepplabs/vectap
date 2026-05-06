@@ -31,7 +31,7 @@ sources:
     enabled: true
     apply_defaults: false
     endpoint:
-      url: http://127.0.0.1:8686/graphql
+      url: http://127.0.0.1:8686
     outputs_of:
       - source.my_logs
     local_filters:
@@ -122,7 +122,7 @@ func TestLoadKoanfLoadsHardcodedRealConfigFixture(t *testing.T) {
 	require.True(t, *sources[0].Enabled)
 	require.NotNil(t, sources[0].ApplyDefaults)
 	require.False(t, *sources[0].ApplyDefaults)
-	require.Equal(t, "http://127.0.0.1:8686/graphql", sources[0].Endpoint.URL)
+	require.Equal(t, "http://127.0.0.1:8686", sources[0].Endpoint.URL)
 	require.Equal(t, []string{"source.my_logs"}, sources[0].OutputsOf)
 	require.Equal(t, []string{"+component.kind:sink"}, sources[0].LocalFilter)
 	require.Equal(t, "eu-prod", sources[1].Name)

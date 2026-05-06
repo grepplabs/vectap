@@ -7,6 +7,12 @@ import (
 	"github.com/grepplabs/vectap/internal/targets"
 )
 
+const (
+	EventKindLog    = "log"
+	EventKindMetric = "metric"
+	EventKindTrace  = "trace"
+)
+
 type TapEvent struct {
 	ComponentID string
 	Kind        string

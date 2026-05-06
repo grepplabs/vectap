@@ -93,14 +93,27 @@ func extractPayloadTags(message string) map[string]string {
 	}
 
 	var payload struct {
-		Tags map[string]any `json:"tags"`
+		Tags    map[string]any `json:"tags"`
+		Message struct {
+			Fields struct {
+				Tags map[string]any `json:"tags"`
+			} `json:"fields"`
+		} `json:"message"`
 	}
-	if err := json.Unmarshal([]byte(message), &payload); err != nil || payload.Tags == nil {
+	if err := json.Unmarshal([]byte(message), &payload); err != nil {
 		return map[string]string{}
 	}
 
-	out := make(map[string]string, len(payload.Tags))
-	for k, v := range payload.Tags {
+	tags := payload.Tags
+	if tags == nil {
+		tags = payload.Message.Fields.Tags
+	}
+	if tags == nil {
+		return map[string]string{}
+	}
+
+	out := make(map[string]string, len(tags))
+	for k, v := range tags {
 		if s, ok := v.(string); ok {
 			out[k] = s
 		}

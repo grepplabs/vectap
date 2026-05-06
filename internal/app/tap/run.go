@@ -364,6 +364,8 @@ func newTapRequest(cfg Config, target targets.Target) vectorapi.TapRequest {
 	return vectorapi.TapRequest{
 		OutputsOf:   append([]string{}, cfg.OutputsOf...),
 		InputsOf:    append([]string{}, cfg.InputsOf...),
+		EventKinds:  append([]string{}, cfg.EventKinds...),
+		RawFormat:   cfg.RawFormat,
 		Interval:    cfg.Interval,
 		Limit:       cfg.Limit,
 		IncludeMeta: cfg.IncludeMeta,
@@ -473,10 +475,14 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 		if s.ApplyDefaults {
 			sc.OutputsOf = append(append([]string{}, cfg.OutputsOf...), s.OutputsOf...)
 			sc.InputsOf = append(append([]string{}, cfg.InputsOf...), s.InputsOf...)
+			sc.EventKinds = mergeEventKinds(cfg.EventKinds, s.EventKinds)
+			sc.RawFormat = sc.RawFormat || s.RawFormat
 			sc.LocalFilters = mergeLocalFilters(cfg.LocalFilters, s.LocalFilters)
 		} else {
 			sc.OutputsOf = append([]string{}, s.OutputsOf...)
 			sc.InputsOf = append([]string{}, s.InputsOf...)
+			sc.EventKinds = append([]string{}, s.EventKinds...)
+			sc.RawFormat = s.RawFormat
 			sc.LocalFilters = cloneLocalFilters(s.LocalFilters)
 		}
 		sc.Sources = nil
@@ -485,6 +491,19 @@ func expandRunConfigs(cfg Config) ([]Config, error) {
 		out = append(out, sc)
 	}
 	return out, nil
+}
+
+func mergeEventKinds(base, extra []string) []string {
+	out := make([]string, 0, len(base)+len(extra))
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	for _, kind := range append(append([]string{}, base...), extra...) {
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		out = append(out, kind)
+	}
+	return out
 }
 
 func mergeLocalFilters(base, extra LocalFilters) LocalFilters {
