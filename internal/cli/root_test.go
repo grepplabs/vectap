@@ -10,6 +10,7 @@ import (
 	components "github.com/grepplabs/vectap/internal/app/components"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
 	topology "github.com/grepplabs/vectap/internal/app/topology"
+	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,7 +117,7 @@ func TestTapDefaults(t *testing.T) {
 	require.Equal(t, "default", cfg.Namespace)
 	require.Equal(t, "app.kubernetes.io/name=vector", cfg.LabelSelector)
 	require.Equal(t, "direct", cfg.Type)
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.DirectURLs)
+	require.Equal(t, []string{"http://127.0.0.1:8686"}, cfg.DirectURLs)
 	require.Equal(t, "text", cfg.Format)
 	require.Equal(t, 8686, cfg.VectorPort)
 	require.Equal(t, 500, cfg.Interval)
@@ -126,6 +127,8 @@ func TestTapDefaults(t *testing.T) {
 	require.True(t, cfg.IncludeMeta)
 	require.Empty(t, cfg.OutputsOf)
 	require.Empty(t, cfg.InputsOf)
+	require.Equal(t, []string{vectorapi.EventKindLog}, cfg.EventKinds)
+	require.False(t, cfg.RawFormat)
 	require.Equal(t, tap.LocalFilters{}, cfg.LocalFilters)
 }
 
@@ -154,13 +157,19 @@ func TestTapExplicitFlags(t *testing.T) {
 	require.Equal(t, 250, cfg.Limit)
 	require.Equal(t, 45*time.Second, cfg.Duration)
 	require.True(t, cfg.IncludeMeta)
+	require.False(t, cfg.RawFormat)
+}
+
+func TestTapRawFormatFlag(t *testing.T) {
+	cfg := runTapCommand(t, "tap", "--raw-format")
+	require.True(t, cfg.RawFormat)
 }
 
 func TestComponentsYAMLFormat(t *testing.T) {
 	cfg := runComponentsCommand(t, "components", "--format", "yaml")
 	require.Equal(t, "yaml", cfg.Format)
 	require.Equal(t, "direct", cfg.Type)
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.DirectURLs)
+	require.Equal(t, []string{"http://127.0.0.1:8686"}, cfg.DirectURLs)
 }
 
 func TestComponentsIncludeMetaFlag(t *testing.T) {
@@ -174,7 +183,7 @@ func TestTopologyYAMLFormat(t *testing.T) {
 	require.Equal(t, "table", cfg.View)
 	require.False(t, cfg.Orphaned)
 	require.Equal(t, "direct", cfg.Type)
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.DirectURLs)
+	require.Equal(t, []string{"http://127.0.0.1:8686"}, cfg.DirectURLs)
 }
 
 func TestTopologyViewFlag(t *testing.T) {
@@ -207,6 +216,7 @@ func TestTapValidationErrors(t *testing.T) {
 		{name: "invalid exclude component-id regex", args: []string{"tap", "--exclude-component-re", "["}},
 		{name: "invalid local filter regex", args: []string{"tap", "--local-filter", "+re:component.type:["}},
 		{name: "invalid local filter field", args: []string{"tap", "--local-filter", "+unknown.field:x"}},
+		{name: "invalid event kind", args: []string{"tap", "--event-kind", "span"}},
 		{name: "removed include-tag-component alias", args: []string{"tap", "--include-tag-component", "^destination-.*"}},
 		{name: "removed exclude-tag-component alias", args: []string{"tap", "--exclude-tag-component", "^prom_.*$"}},
 		{name: "removed include-component alias", args: []string{"tap", "--include-component", "x"}},
@@ -276,9 +286,12 @@ func TestTapRepeatableFlagsAccumulate(t *testing.T) {
 		"--outputs-of", "d,e",
 		"--inputs-of", "x",
 		"--inputs-of", "y,z",
+		"--event-kind", "metric",
+		"--event-kind", "trace,log",
 	)
 	require.Equal(t, []string{"a", "b", "c", "d", "e"}, cfg.OutputsOf)
 	require.Equal(t, []string{"x", "y", "z"}, cfg.InputsOf)
+	require.Equal(t, []string{"metric", "trace", "log"}, cfg.EventKinds)
 }
 
 func TestTapOutputsOfFromEnvironment(t *testing.T) {
@@ -325,7 +338,7 @@ sources:
     type: direct
     format: text
     endpoint:
-      url: http://127.0.0.1:8686/graphql
+      url: http://127.0.0.1:8686
   - name: eu-prod
     type: kubernetes
     cluster:
@@ -348,7 +361,7 @@ sources:
 	require.Len(t, cfg.Sources, 2)
 	require.Equal(t, "local-direct", cfg.Sources[0].Name)
 	require.Equal(t, "direct", cfg.Sources[0].Type)
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.Sources[0].DirectURLs)
+	require.Equal(t, []string{"http://127.0.0.1:8686"}, cfg.Sources[0].DirectURLs)
 	require.Equal(t, "text", cfg.Sources[0].Format)
 	require.Equal(t, "eu-prod", cfg.Sources[1].Name)
 	require.Equal(t, "kubernetes", cfg.Sources[1].Type)

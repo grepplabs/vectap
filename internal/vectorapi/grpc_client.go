@@ -3,6 +3,8 @@ package vectorapi
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,12 +21,6 @@ import (
 )
 
 type GRPCClient struct{}
-
-const (
-	eventKindLog    = "log"
-	eventKindMetric = "metric"
-	eventKindTrace  = "trace"
-)
 
 func NewGRPCClient() *GRPCClient {
 	return &GRPCClient{}
@@ -168,6 +164,9 @@ func (c *GRPCClient) tap(ctx context.Context, endpointURL string, req TapRequest
 		if ev == nil {
 			continue
 		}
+		if !allowGRPCTapEvent(req.EventKinds, ev.GetEvent()) {
+			continue
+		}
 
 		raw, err := protojson.Marshal(ev)
 		if err != nil {
@@ -178,7 +177,7 @@ func (c *GRPCClient) tap(ctx context.Context, endpointURL string, req TapRequest
 			ComponentID: ev.GetComponentId(),
 			Kind:        tapEventKindFromProto(ev.GetComponentKind(), ev.GetEvent()),
 			Timestamp:   tapEventTimestampFromProto(ev.GetEvent()),
-			Message:     tapEventMessageFromProto(ev.GetEvent()),
+			Message:     tapEventPayloadFromProto(ev, req.RawFormat),
 			Raw:         raw,
 			Meta:        tapEventMetaFromProto(ev),
 		}
@@ -188,6 +187,120 @@ func (c *GRPCClient) tap(ctx context.Context, endpointURL string, req TapRequest
 			return nil
 		case events <- tapEvent:
 		}
+	}
+}
+
+func tapEventPayloadFromProto(ev *vectorpb.TappedEvent, rawFormat bool) string {
+	if ev == nil {
+		return ""
+	}
+
+	payload := map[string]any{
+		"eventType":     grpcTypename(ev.GetEvent()),
+		"componentId":   ev.GetComponentId(),
+		"componentType": ev.GetComponentType(),
+		"componentKind": ev.GetComponentKind(),
+		"timestamp":     tapEventTimestampFromProto(ev.GetEvent()).Format(time.RFC3339Nano),
+		"message":       tapEventMessageAnyFromProto(ev.GetEvent(), rawFormat),
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return tapEventMessageFromProto(ev.GetEvent(), rawFormat)
+	}
+	return string(b)
+}
+
+func grpcTypename(event *vectorpb.EventWrapper) string {
+	switch event.GetEvent().(type) {
+	case *vectorpb.EventWrapper_Log:
+		return "Log"
+	case *vectorpb.EventWrapper_Metric:
+		return "Metric"
+	case *vectorpb.EventWrapper_Trace:
+		return "Trace"
+	default:
+		return ""
+	}
+}
+
+//nolint:cyclop
+func tapEventMessageAnyFromProto(event *vectorpb.EventWrapper, rawFormat bool) any {
+	if event == nil {
+		return ""
+	}
+	if rawFormat {
+		if raw := tapEventRawAnyFromProto(event); raw != nil {
+			return raw
+		}
+		return tapEventMessageFromProto(event, true)
+	}
+	logEvent, ok := event.GetEvent().(*vectorpb.EventWrapper_Log)
+	if ok && logEvent.Log != nil {
+		if b := logEvent.Log.GetValue().GetRawBytes(); len(b) > 0 {
+			return string(b)
+		}
+		if full := logEventToNative(logEvent.Log); full != nil {
+			if obj, ok := full["log"].(map[string]any); ok {
+				return obj
+			}
+			return full
+		}
+	}
+	return tapEventMessageFromProto(event, rawFormat)
+}
+
+func tapEventRawAnyFromProto(event *vectorpb.EventWrapper) any {
+	if event == nil {
+		return nil
+	}
+	raw, err := protojson.Marshal(event)
+	if err != nil {
+		return nil
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func allowGRPCTapEvent(allowedKinds []string, event *vectorpb.EventWrapper) bool {
+	return isAllowedEventKind(allowedKinds, grpcTapEventKind(event))
+}
+
+func isAllowedEventKind(allowedKinds []string, eventKind string) bool {
+	kind := eventKind
+	if kind == "" {
+		return false
+	}
+
+	allowed := allowedKinds
+	if len(allowed) == 0 {
+		allowed = []string{EventKindLog}
+	}
+	for _, candidate := range allowed {
+		if candidate == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func grpcTapEventKind(event *vectorpb.EventWrapper) string {
+	if event == nil {
+		return ""
+	}
+
+	switch event.GetEvent().(type) {
+	case *vectorpb.EventWrapper_Log:
+		return EventKindLog
+	case *vectorpb.EventWrapper_Metric:
+		return EventKindMetric
+	case *vectorpb.EventWrapper_Trace:
+		return EventKindTrace
+	default:
+		return ""
 	}
 }
 
@@ -253,18 +366,18 @@ func tapEventKindFromProto(componentKind string, event *vectorpb.EventWrapper) s
 		return componentKind
 	}
 	if event == nil {
-		return eventKindLog
+		return EventKindLog
 	}
 
 	switch event.GetEvent().(type) {
 	case *vectorpb.EventWrapper_Log:
-		return eventKindLog
+		return EventKindLog
 	case *vectorpb.EventWrapper_Metric:
-		return eventKindMetric
+		return EventKindMetric
 	case *vectorpb.EventWrapper_Trace:
-		return eventKindTrace
+		return EventKindTrace
 	default:
-		return eventKindLog
+		return EventKindLog
 	}
 }
 
@@ -294,15 +407,28 @@ func tapEventTimestampFromProto(event *vectorpb.EventWrapper) time.Time {
 }
 
 //nolint:cyclop
-func tapEventMessageFromProto(event *vectorpb.EventWrapper) string {
+func tapEventMessageFromProto(event *vectorpb.EventWrapper, rawFormat bool) string {
 	if event == nil {
 		return ""
+	}
+	if rawFormat {
+		raw, err := protojson.Marshal(event)
+		if err != nil {
+			return ""
+		}
+		return string(raw)
 	}
 
 	switch ev := event.GetEvent().(type) {
 	case *vectorpb.EventWrapper_Log:
 		if b := ev.Log.GetValue().GetRawBytes(); len(b) > 0 {
 			return string(b)
+		}
+		if full := logEventToNative(ev.Log); full != nil {
+			b, err := json.Marshal(full)
+			if err == nil {
+				return string(b)
+			}
 		}
 	case *vectorpb.EventWrapper_Metric:
 		if ev.Metric.GetName() != "" {
@@ -321,6 +447,63 @@ func tapEventMessageFromProto(event *vectorpb.EventWrapper) string {
 		return ""
 	}
 	return string(raw)
+}
+
+func logEventToNative(log *vectorpb.Log) map[string]any {
+	if log == nil {
+		return nil
+	}
+
+	out := make(map[string]any, 4)
+	if fields := valueFieldsToNative(log.GetFields()); len(fields) > 0 {
+		out["fields"] = fields
+	}
+	if v, ok := valueToNative(log.GetValue()); ok {
+		out["value"] = v
+	}
+	if md := metadataToNative(log.GetMetadataFull()); md != nil {
+		out["metadata"] = md
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return map[string]any{"log": out}
+}
+
+//nolint:cyclop
+func metadataToNative(md *vectorpb.Metadata) map[string]any {
+	if md == nil {
+		return nil
+	}
+	out := make(map[string]any)
+	if v, ok := valueToNative(md.GetValue()); ok {
+		out["value"] = v
+	}
+	if v := md.GetSourceId(); v != "" {
+		out["sourceId"] = v
+	}
+	if v := md.GetSourceType(); v != "" {
+		out["sourceType"] = v
+	}
+	if upstream := md.GetUpstreamId(); upstream != nil {
+		upstreamOut := make(map[string]any)
+		if v := upstream.GetComponent(); v != "" {
+			upstreamOut["component"] = v
+		}
+		if v := upstream.GetPort(); v != "" {
+			upstreamOut["port"] = v
+		}
+		if len(upstreamOut) > 0 {
+			out["upstreamId"] = upstreamOut
+		}
+	}
+	if b := md.GetSourceEventId(); len(b) > 0 {
+		out["sourceEventId"] = base64.StdEncoding.EncodeToString(b)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func tapEventMetaFromProto(ev *vectorpb.TappedEvent) map[string]string {
@@ -380,6 +563,62 @@ func mergeMetadata(meta map[string]string, md *vectorpb.Metadata) {
 	}
 }
 
+func valueFieldsToNative(fields map[string]*vectorpb.Value) map[string]any {
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if native, ok := valueToNative(v); ok {
+			out[k] = native
+		}
+	}
+	return out
+}
+
+//nolint:cyclop
+func valueToNative(v *vectorpb.Value) (any, bool) {
+	if v == nil {
+		return nil, false
+	}
+
+	switch x := v.GetKind().(type) {
+	case *vectorpb.Value_RawBytes:
+		return string(x.RawBytes), true
+	case *vectorpb.Value_Integer:
+		return x.Integer, true
+	case *vectorpb.Value_Float:
+		return x.Float, true
+	case *vectorpb.Value_Boolean:
+		return x.Boolean, true
+	case *vectorpb.Value_Timestamp:
+		if x.Timestamp == nil {
+			return nil, false
+		}
+		return x.Timestamp.AsTime().UTC().Format(time.RFC3339), true
+	case *vectorpb.Value_Null:
+		return nil, true
+	case *vectorpb.Value_Map:
+		out := make(map[string]any, len(x.Map.GetFields()))
+		for k, vv := range x.Map.GetFields() {
+			if native, ok := valueToNative(vv); ok {
+				out[k] = native
+			}
+		}
+		return out, true
+	case *vectorpb.Value_Array:
+		out := make([]any, 0, len(x.Array.GetItems()))
+		for _, vv := range x.Array.GetItems() {
+			if native, ok := valueToNative(vv); ok {
+				out = append(out, native)
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
 //nolint:cyclop
 func valueToString(v *vectorpb.Value) (string, bool) {
 	if v == nil {
@@ -398,7 +637,7 @@ func valueToString(v *vectorpb.Value) (string, bool) {
 		if x.Timestamp == nil {
 			return "", false
 		}
-		return x.Timestamp.AsTime().UTC().Format(time.RFC3339Nano), true
+		return x.Timestamp.AsTime().UTC().Format(time.RFC3339), true
 	case *vectorpb.Value_Null:
 		return "null", true
 	case *vectorpb.Value_Map:

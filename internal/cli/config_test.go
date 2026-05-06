@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/grepplabs/vectap/internal/app/runconfig"
+	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/knadh/koanf/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -130,13 +131,14 @@ func TestTapConfigFromKoanfDefaultsFallback(t *testing.T) {
 	require.False(t, cfg.IncludeMeta)
 	require.Equal(t, []string{"*"}, cfg.OutputsOf)
 	require.Equal(t, []string{"sink.default"}, cfg.InputsOf)
+	require.Equal(t, []string{vectorapi.EventKindLog}, cfg.EventKinds)
 	require.Equal(t, []string{"sink"}, cfg.LocalFilters.ComponentKind.IncludeGlob)
 }
 
 func TestTapConfigFromKoanfCLIOverridesDefaults(t *testing.T) {
 	v := koanf.New(".")
 	setK(v, "defaults.type", "direct")
-	setK(v, "defaults.direct_url", "http://127.0.0.1:8686/graphql")
+	setK(v, "defaults.direct_url", "http://127.0.0.1:8686")
 	setK(v, "defaults.discovery.namespace", "default")
 	setK(v, "defaults.format", "json")
 	setK(v, "defaults.include_meta", false)
@@ -149,6 +151,7 @@ func TestTapConfigFromKoanfCLIOverridesDefaults(t *testing.T) {
 	setK(v, "interval", 500)
 	setK(v, "limit", 100)
 	setK(v, "duration", "30s")
+	setK(v, "raw-format", true)
 
 	cfg, err := tapConfigFromKoanf(v)
 	require.NoError(t, err)
@@ -158,13 +161,31 @@ func TestTapConfigFromKoanfCLIOverridesDefaults(t *testing.T) {
 	require.Equal(t, 500, cfg.Interval)
 	require.Equal(t, 100, cfg.Limit)
 	require.Equal(t, 30*time.Second, cfg.Duration)
+	require.Equal(t, []string{vectorapi.EventKindLog}, cfg.EventKinds)
+	require.True(t, cfg.RawFormat)
+}
+
+func TestTapConfigFromKoanfEventKinds(t *testing.T) {
+	v := koanf.New(".")
+	setK(v, "defaults.type", runconfig.SourceTypeDirect)
+	setK(v, "defaults.direct_url", runconfig.DefaultDirectURL)
+	setK(v, "defaults.discovery.namespace", runconfig.DefaultNamespace)
+	setK(v, "defaults.format", runconfig.FormatText)
+	setK(v, "defaults.transport.vector_port", runconfig.DefaultVectorPort)
+	setK(v, "defaults.transport.interval", runconfig.DefaultTapInterval)
+	setK(v, "defaults.transport.limit", runconfig.DefaultTapLimit)
+	setK(v, "event-kind", []string{"metric", "trace,log"})
+
+	cfg, err := tapConfigFromKoanf(v)
+	require.NoError(t, err)
+	require.Equal(t, []string{"metric", "trace", "log"}, cfg.EventKinds)
 }
 
 func TestLoadSourceConfigsSourceOverrides(t *testing.T) {
 	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeKubernetes
-	defs.DirectURL = "http://127.0.0.1:8686/graphql"
+	defs.DirectURL = "http://127.0.0.1:8686"
 	defs.Discovery.Namespace = "default"
 	defs.Discovery.Selector = "app.kubernetes.io/name=vector"
 	defs.Transport.VectorPort = new(8686)
@@ -282,7 +303,7 @@ func TestResolveHelpersUseDefaultsWhenNoInput(t *testing.T) {
 	v := koanf.New(".")
 
 	require.Equal(t, "json", resolveString(v, "format", "json"))
-	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, resolveStringSlice(v, "direct-url", "http://127.0.0.1:8686/graphql"))
+	require.Equal(t, []string{"http://127.0.0.1:8686"}, resolveStringSlice(v, "direct-url", "http://127.0.0.1:8686"))
 	require.Equal(t, 9999, resolveInt(v, "vector-port", new(9999)))
 	require.Equal(t, 500, resolveInt(v, "interval", new(500)))
 	require.Equal(t, 100, resolveInt(v, "limit", new(100)))
@@ -322,7 +343,7 @@ func TestLoadComponentsSourceConfigsSourceOverrides(t *testing.T) {
 	v := koanf.New(".")
 	defs := defaultsFile{}
 	defs.Type = runconfig.SourceTypeKubernetes
-	defs.DirectURL = "http://127.0.0.1:8686/graphql"
+	defs.DirectURL = "http://127.0.0.1:8686"
 	defs.Discovery.Namespace = "default"
 	defs.Discovery.Selector = "app.kubernetes.io/name=vector"
 	defs.Transport.VectorPort = new(8686)
