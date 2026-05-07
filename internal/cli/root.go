@@ -9,6 +9,7 @@ import (
 	"github.com/grepplabs/vectap/internal/app/components"
 	"github.com/grepplabs/vectap/internal/app/tap"
 	"github.com/grepplabs/vectap/internal/app/topology"
+	"github.com/grepplabs/vectap/internal/app/vectorcmd"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +17,7 @@ type appRunner interface {
 	Tap(ctx context.Context, cfg tap.Config) error
 	Components(ctx context.Context, cfg components.Config) error
 	Topology(ctx context.Context, cfg topology.Config) error
+	Vector(ctx context.Context, cfg vectorcmd.Config) error
 }
 
 type newRunnerFunc func() appRunner
@@ -41,6 +43,7 @@ func defaultRunner() appRunner {
 		tapRunner:        tap.NewDefaultRunner(),
 		componentsRunner: components.NewDefaultRunner(),
 		topologyRunner:   topology.NewDefaultRunner(),
+		vectorRunner:     vectorcmd.NewDefaultRunner(),
 	}
 }
 
@@ -48,6 +51,7 @@ type defaultAppRunner struct {
 	tapRunner        *tap.Runner
 	componentsRunner *components.Runner
 	topologyRunner   *topology.Runner
+	vectorRunner     *vectorcmd.Runner
 }
 
 func (r *defaultAppRunner) Tap(ctx context.Context, cfg tap.Config) error {
@@ -60,6 +64,10 @@ func (r *defaultAppRunner) Components(ctx context.Context, cfg components.Config
 
 func (r *defaultAppRunner) Topology(ctx context.Context, cfg topology.Config) error {
 	return r.topologyRunner.Topology(ctx, cfg)
+}
+
+func (r *defaultAppRunner) Vector(ctx context.Context, cfg vectorcmd.Config) error {
+	return r.vectorRunner.Vector(ctx, cfg)
 }
 
 func newRootCmd(newRunner newRunnerFunc) *cobra.Command {
@@ -82,6 +90,7 @@ func newRootCmd(newRunner newRunnerFunc) *cobra.Command {
 	cmd.AddCommand(newComponentsCmd(newRunner))
 	cmd.AddCommand(newTopologyCmd(newRunner))
 	cmd.AddCommand(newTapCmd(newRunner))
+	cmd.AddCommand(newVectorCmd(newRunner))
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd
