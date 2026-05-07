@@ -10,6 +10,7 @@ import (
 	components "github.com/grepplabs/vectap/internal/app/components"
 	tap "github.com/grepplabs/vectap/internal/app/tap"
 	topology "github.com/grepplabs/vectap/internal/app/topology"
+	vectorcmd "github.com/grepplabs/vectap/internal/app/vectorcmd"
 	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/stretchr/testify/require"
 )
@@ -18,6 +19,7 @@ type captureRunner struct {
 	tapCfgs        []tap.Config
 	componentsCfgs []components.Config
 	topologyCfgs   []topology.Config
+	vectorCfgs     []vectorcmd.Config
 }
 
 func (r *captureRunner) Tap(_ context.Context, cfg tap.Config) error {
@@ -32,6 +34,11 @@ func (r *captureRunner) Components(_ context.Context, cfg components.Config) err
 
 func (r *captureRunner) Topology(_ context.Context, cfg topology.Config) error {
 	r.topologyCfgs = append(r.topologyCfgs, cfg)
+	return nil
+}
+
+func (r *captureRunner) Vector(_ context.Context, cfg vectorcmd.Config) error {
+	r.vectorCfgs = append(r.vectorCfgs, cfg)
 	return nil
 }
 
@@ -90,6 +97,17 @@ func runTopologyCommandExpectError(t *testing.T, args ...string) {
 	exitCode := execute(args, &stderr, newRunnerWithCapture(r))
 	require.NotZero(t, exitCode, "expected failure")
 	require.Empty(t, r.topologyCfgs, "runner should not be invoked on validation error")
+}
+
+func runVectorCommand(t *testing.T, args ...string) vectorcmd.Config {
+	t.Helper()
+
+	r := &captureRunner{}
+	var stderr bytes.Buffer
+	exitCode := execute(args, &stderr, newRunnerWithCapture(r))
+	require.Zero(t, exitCode, "stderr=%q", stderr.String())
+	require.Len(t, r.vectorCfgs, 1)
+	return r.vectorCfgs[0]
 }
 
 func requireFilterRules(t *testing.T, got tap.LocalFilterRules, includeGlob, excludeGlob, includeRE, excludeRE []string) {
@@ -163,6 +181,31 @@ func TestTapExplicitFlags(t *testing.T) {
 func TestTapRawFormatFlag(t *testing.T) {
 	cfg := runTapCommand(t, "tap", "--raw-format")
 	require.True(t, cfg.RawFormat)
+}
+
+func TestVectorTapPassThroughArgs(t *testing.T) {
+	cfg := runVectorCommand(t, "vector", "tap", "--type", "direct", "--direct-url", "http://127.0.0.1:8686/graphql", "--", "--interval", "250", "--limit", "5")
+	require.Equal(t, vectorcmd.ModeTap, cfg.Mode)
+	require.Equal(t, []string{"--interval", "250", "--limit", "5"}, cfg.ExtraArgs)
+	require.Equal(t, []string{"http://127.0.0.1:8686/graphql"}, cfg.DirectURLs)
+	require.Equal(t, "vector", cfg.VectorBin)
+	require.True(t, cfg.TapPrefix)
+	require.True(t, cfg.TapColor)
+}
+
+func TestVectorTapPrefixAndColorFlags(t *testing.T) {
+	cfg := runVectorCommand(t, "vector", "tap", "--tap-prefix=false", "--tap-color=false")
+	require.False(t, cfg.TapPrefix)
+	require.False(t, cfg.TapColor)
+}
+
+func TestVectorTopPassThroughArgs(t *testing.T) {
+	cfg := runVectorCommand(t, "vector", "top", "--vector-bin", "/usr/local/bin/vector", "--terminal-cmd", "gnome-terminal --", "--", "--human-metrics")
+	require.Equal(t, vectorcmd.ModeTop, cfg.Mode)
+	require.Equal(t, []string{"--human-metrics"}, cfg.ExtraArgs)
+	require.Equal(t, "/usr/local/bin/vector", cfg.VectorBin)
+	require.Equal(t, "gnome-terminal --", cfg.TerminalCmd)
+	require.False(t, cfg.TerminalHold)
 }
 
 func TestComponentsYAMLFormat(t *testing.T) {

@@ -147,6 +147,23 @@ You can also override top-level API at runtime:
 vectap tap --api grpc --type kubernetes -n observability -l app=vector
 ```
 
+## Run Native `vector tap`
+
+Use `vectap vector` when you want `vectap` to resolve targets and invoke the native `vector` binary.
+
+- `vectap vector tap` runs one `vector tap` process per resolved endpoint, always in parallel.
+- `--tap-prefix` controls per-line source/target prefix in merged output (default: `true`).
+- `--tap-color` controls colored prefixes (default: `true`).
+- For Kubernetes sources, `vectap` starts local port-forwards and passes `--url http://127.0.0.1:<port>` to each process.
+- Extra Vector CLI arguments are passed after `--`.
+
+Examples:
+
+```bash
+vectap vector tap --type direct --direct-url http://127.0.0.1:8686 -- --interval 500 --limit 50
+vectap --config vectap.yaml vector tap --all-sources -- --outputs-of source.my_logs
+```
+
 ## Filtering
 
 ## Sampling controls

@@ -9,6 +9,7 @@ import (
 	"github.com/grepplabs/vectap/internal/app/runconfig"
 	"github.com/grepplabs/vectap/internal/app/tap"
 	"github.com/grepplabs/vectap/internal/app/topology"
+	"github.com/grepplabs/vectap/internal/app/vectorcmd"
 	"github.com/grepplabs/vectap/internal/ptr"
 	"github.com/grepplabs/vectap/internal/vectorapi"
 	"github.com/knadh/koanf/v2"
@@ -86,6 +87,35 @@ func topologyConfigFromKoanf(v *koanf.Koanf) (topology.Config, error) {
 		View:       resolveString(v, "view", topology.ViewTable),
 		Orphaned:   resolveBool(v, "orphaned", new(false)),
 		Sources:    sources,
+	}
+	return cfg, cfg.Validate()
+}
+
+func vectorConfigFromKoanf(v *koanf.Koanf, mode string, extraArgs []string) (vectorcmd.Config, error) {
+	defs, err := loadDefaults(v)
+	if err != nil {
+		return vectorcmd.Config{}, err
+	}
+
+	baseConfig := baseConfigFromKoanf(v, defs)
+	baseConfig.API = string(runconfig.VectorDefaultAPI)
+	baseConfig.Format = runconfig.FormatText
+	baseConfig.IncludeMeta = runconfig.DefaultIncludeMeta
+	sources, err := loadVectorSourceConfigs(defs, v, baseConfig.Format, baseConfig.IncludeMeta, baseConfig.API)
+	if err != nil {
+		return vectorcmd.Config{}, err
+	}
+
+	cfg := vectorcmd.Config{
+		BaseConfig:   baseConfig,
+		Mode:         mode,
+		VectorBin:    resolveString(v, "vector-bin", "vector"),
+		TapPrefix:    resolveBool(v, "tap-prefix", new(true)),
+		TapColor:     resolveBool(v, "tap-color", new(true)),
+		TerminalCmd:  resolveString(v, "terminal-cmd", ""),
+		TerminalHold: resolveBool(v, "terminal-hold", new(false)),
+		ExtraArgs:    append([]string{}, extraArgs...),
+		Sources:      sources,
 	}
 	return cfg, cfg.Validate()
 }
@@ -368,6 +398,19 @@ func loadTopologySourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat 
 				IncludeMeta:    includeMeta,
 			},
 		})
+	}
+	return out, nil
+}
+
+func loadVectorSourceConfigs(defs defaultsFile, v *koanf.Koanf, defaultFormat string, sourceDefaultIncludeMeta bool, defaultAPI string) ([]vectorcmd.SourceConfig, error) {
+	componentSources, err := loadComponentsSourceConfigs(defs, v, defaultFormat, sourceDefaultIncludeMeta, defaultAPI)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]vectorcmd.SourceConfig, 0, len(componentSources))
+	for _, s := range componentSources {
+		out = append(out, vectorcmd.SourceConfig{BaseSourceConfig: s.BaseSourceConfig})
 	}
 	return out, nil
 }
