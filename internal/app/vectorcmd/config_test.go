@@ -17,6 +17,7 @@ func TestConfigValidateSuccess(t *testing.T) {
 			VectorPort: runconfig.DefaultVectorPort,
 		},
 		Mode:      ModeTap,
+		TapLayout: TapLayoutMerged,
 		VectorBin: "vector",
 	}
 	require.NoError(t, cfg.Validate())
@@ -38,5 +39,10 @@ func TestConfigValidateErrors(t *testing.T) {
 
 	cfg.Mode = ModeTop
 	cfg.VectorBin = ""
+	require.Error(t, cfg.Validate())
+
+	cfg.Mode = ModeTap
+	cfg.VectorBin = "vector"
+	cfg.TapLayout = "bad"
 	require.Error(t, cfg.Validate())
 }
