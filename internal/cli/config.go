@@ -112,6 +112,7 @@ func vectorConfigFromKoanf(v *koanf.Koanf, mode string, extraArgs []string) (vec
 		VectorBin:    resolveString(v, "vector-bin", "vector"),
 		TapPrefix:    resolveBool(v, "tap-prefix", new(true)),
 		TapColor:     resolveBool(v, "tap-color", new(true)),
+		TapLayout:    resolveString(v, "tap-layout", vectorcmd.TapLayoutMerged),
 		TerminalCmd:  resolveString(v, "terminal-cmd", ""),
 		TerminalHold: resolveBool(v, "terminal-hold", new(false)),
 		ExtraArgs:    append([]string{}, extraArgs...),

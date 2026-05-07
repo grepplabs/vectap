@@ -154,6 +154,7 @@ Use `vectap vector` when you want `vectap` to resolve targets and invoke the nat
 - `vectap vector tap` runs one `vector tap` process per resolved endpoint, always in parallel.
 - `--tap-prefix` controls per-line source/target prefix in merged output (default: `true`).
 - `--tap-color` controls colored prefixes (default: `true`).
+- `--tap-layout` controls how tap processes are shown: `merged` (default, all output in one terminal) or `terminals` (one terminal window per target).
 - For Kubernetes sources, `vectap` starts local port-forwards and passes `--url http://127.0.0.1:<port>` to each process.
 - Extra Vector CLI arguments are passed after `--`.
 
@@ -162,6 +163,7 @@ Examples:
 ```bash
 vectap vector tap --type direct --direct-url http://127.0.0.1:8686 -- --interval 500 --limit 50
 vectap --config vectap.yaml vector tap --all-sources -- --outputs-of source.my_logs
+vectap vector tap --all-sources --tap-layout terminals --terminal-hold -- --interval 500
 ```
 
 ## Filtering

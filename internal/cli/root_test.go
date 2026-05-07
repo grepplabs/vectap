@@ -191,12 +191,18 @@ func TestVectorTapPassThroughArgs(t *testing.T) {
 	require.Equal(t, "vector", cfg.VectorBin)
 	require.True(t, cfg.TapPrefix)
 	require.True(t, cfg.TapColor)
+	require.Equal(t, vectorcmd.TapLayoutMerged, cfg.TapLayout)
 }
 
 func TestVectorTapPrefixAndColorFlags(t *testing.T) {
 	cfg := runVectorCommand(t, "vector", "tap", "--tap-prefix=false", "--tap-color=false")
 	require.False(t, cfg.TapPrefix)
 	require.False(t, cfg.TapColor)
+}
+
+func TestVectorTapLayoutFlag(t *testing.T) {
+	cfg := runVectorCommand(t, "vector", "tap", "--tap-layout", "terminals")
+	require.Equal(t, vectorcmd.TapLayoutTerminals, cfg.TapLayout)
 }
 
 func TestVectorTopPassThroughArgs(t *testing.T) {

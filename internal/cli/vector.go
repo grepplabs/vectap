@@ -39,6 +39,7 @@ func newVectorTapCmd(newRunner newRunnerFunc) *cobra.Command {
 	addVectorBaseFlags(cmd)
 	cmd.Flags().Bool("tap-prefix", true, "prefix each vector tap line with source/target")
 	cmd.Flags().Bool("tap-color", true, "colorize vector tap prefixes")
+	cmd.Flags().String("tap-layout", vectorcmd.TapLayoutMerged, "tap output layout: merged|terminals")
 	return cmd
 }
 

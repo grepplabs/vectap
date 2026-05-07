@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	ModeTap = "tap"
-	ModeTop = "top"
+	ModeTap            = "tap"
+	ModeTop            = "top"
+	TapLayoutMerged    = "merged"
+	TapLayoutTerminals = "terminals"
 )
 
 type Config struct {
@@ -17,6 +19,7 @@ type Config struct {
 	VectorBin    string
 	TapPrefix    bool
 	TapColor     bool
+	TapLayout    string
 	TerminalCmd  string
 	TerminalHold bool
 	ExtraArgs    []string
@@ -33,6 +36,11 @@ func (c Config) Validate() error {
 	}
 	if err := runconfig.ValidateAllowed("", "mode", c.Mode, false, ModeTap, ModeTop); err != nil {
 		return err
+	}
+	if c.Mode == ModeTap {
+		if err := runconfig.ValidateAllowed("", "tap-layout", c.TapLayout, false, TapLayoutMerged, TapLayoutTerminals); err != nil {
+			return err
+		}
 	}
 	if c.VectorBin == "" {
 		return errors.New("vector-bin is required")

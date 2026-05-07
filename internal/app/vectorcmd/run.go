@@ -70,8 +70,8 @@ func (r *Runner) Vector(ctx context.Context, cfg Config) error {
 		return errors.New("no targets resolved")
 	}
 
-	if cfg.Mode == ModeTop {
-		return r.runTopInSeparateTerminals(ctx, cfg, invocations)
+	if cfg.Mode == ModeTop || (cfg.Mode == ModeTap && cfg.TapLayout == TapLayoutTerminals) {
+		return r.runInSeparateTerminals(ctx, cfg, invocations)
 	}
 
 	return r.runInCurrentTerminal(ctx, cfg, invocations)
@@ -167,7 +167,7 @@ func formatTapPrefix(inv invocation, idx int, enabled, color bool) string {
 	return fmt.Sprintf("\x1b[%dm%s\x1b[0m", c, label)
 }
 
-func (r *Runner) runTopInSeparateTerminals(ctx context.Context, cfg Config, invocations []invocation) error {
+func (r *Runner) runInSeparateTerminals(ctx context.Context, cfg Config, invocations []invocation) error {
 	pidDir, err := os.MkdirTemp("", "vectap-top-pids-")
 	if err != nil {
 		return fmt.Errorf("create pid dir: %w", err)
@@ -176,24 +176,24 @@ func (r *Runner) runTopInSeparateTerminals(ctx context.Context, cfg Config, invo
 
 	pidFiles := make([]string, 0, len(invocations))
 	for i, inv := range invocations {
-		vectorArgs := append([]string{"top", "--url", inv.endpointURL}, cfg.ExtraArgs...)
+		vectorArgs := append([]string{cfg.Mode, "--url", inv.endpointURL}, cfg.ExtraArgs...)
 		pidFile := fmt.Sprintf("%s/%d.pid", pidDir, i)
-		title := fmt.Sprintf("vectap top: %s %s", inv.sourceName, inv.targetID)
+		title := fmt.Sprintf("vectap %s: %s %s", cfg.Mode, inv.sourceName, inv.targetID)
 		cmd, err := r.newTerminalCommand(ctx, cfg, vectorArgs, pidFile, title)
 		if err != nil {
 			return fmt.Errorf("create terminal command for source=%q target=%q: %w", inv.sourceName, inv.targetID, err)
 		}
 
-		_, _ = fmt.Fprintf(os.Stderr, "info: starting vector top source=%q target=%q url=%s\n", inv.sourceName, inv.targetID, inv.endpointURL)
+		_, _ = fmt.Fprintf(os.Stderr, "info: starting vector %s source=%q target=%q url=%s\n", cfg.Mode, inv.sourceName, inv.targetID, inv.endpointURL)
 		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("start vector top source=%q target=%q url=%s: %w", inv.sourceName, inv.targetID, inv.endpointURL, err)
+			return fmt.Errorf("start vector %s source=%q target=%q url=%s: %w", cfg.Mode, inv.sourceName, inv.targetID, inv.endpointURL, err)
 		}
 		pidFiles = append(pidFiles, pidFile)
 	}
-	_, _ = fmt.Fprintln(os.Stderr, "info: vector top terminals started; keeping port-forwards active until interrupted (Ctrl+C)")
+	_, _ = fmt.Fprintf(os.Stderr, "info: vector %s terminals started; keeping port-forwards active until interrupted (Ctrl+C)\n", cfg.Mode)
 	if !cfg.TerminalHold {
-		if r.waitUntilAllTopExited(ctx, pidFiles) {
-			_, _ = fmt.Fprintln(os.Stderr, "info: all vector top processes exited; stopping port-forwards")
+		if r.waitUntilAllExited(ctx, pidFiles) {
+			_, _ = fmt.Fprintf(os.Stderr, "info: all vector %s processes exited; stopping port-forwards\n", cfg.Mode)
 			return nil
 		}
 	}
@@ -202,7 +202,7 @@ func (r *Runner) runTopInSeparateTerminals(ctx context.Context, cfg Config, invo
 	return nil
 }
 
-func (r *Runner) waitUntilAllTopExited(ctx context.Context, pidFiles []string) bool {
+func (r *Runner) waitUntilAllExited(ctx context.Context, pidFiles []string) bool {
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -247,7 +247,7 @@ func isProcessAlive(pid int) bool {
 }
 
 func (r *Runner) newTerminalCommand(ctx context.Context, cfg Config, vectorArgs []string, pidFile, title string) (*exec.Cmd, error) {
-	cmdline := topCommandLine(cfg.VectorBin, vectorArgs, cfg.TerminalHold, pidFile, title)
+	cmdline := terminalCommandLine(cfg.VectorBin, vectorArgs, cfg.TerminalHold, pidFile, title)
 
 	if cfg.TerminalCmd != "" {
 		return r.customTerminalCommand(ctx, cfg.TerminalCmd, cmdline)
@@ -293,12 +293,16 @@ func (r *Runner) defaultLinuxTerminalCommand(ctx context.Context, cmdline string
 	return nil, errors.New("no supported terminal emulator found (tried: x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm, alacritty, wezterm); set --terminal-cmd to override")
 }
 
-func topCommandLine(vectorBin string, vectorArgs []string, hold bool, pidFile, title string) string {
+func terminalCommandLine(vectorBin string, vectorArgs []string, hold bool, pidFile, title string) string {
 	parts := append([]string{vectorBin}, vectorArgs...)
 	cmdline := shellJoin(parts)
+	modeLabel := "vector"
+	if len(vectorArgs) > 0 && vectorArgs[0] != "" {
+		modeLabel = "vector " + vectorArgs[0]
+	}
 	setTitle := "printf '\\033]0;%s\\007' " + shellQuote(title) + "; "
 	if hold {
-		return setTitle + "echo $$ > " + shellQuote(pidFile) + "; " + cmdline + "; _vectap_status=$?; if [ ${_vectap_status} -ne 0 ]; then printf '\\nvector top exited with status %s\\n' \"${_vectap_status}\"; fi; exec \"${SHELL:-/bin/sh}\" -l"
+		return setTitle + "echo $$ > " + shellQuote(pidFile) + "; " + cmdline + "; _vectap_status=$?; if [ ${_vectap_status} -ne 0 ]; then printf '\\n" + modeLabel + " exited with status %s\\n' \"${_vectap_status}\"; fi; exec \"${SHELL:-/bin/sh}\" -l"
 	}
 	return setTitle + "echo $$ > " + shellQuote(pidFile) + "; exec " + cmdline
 }

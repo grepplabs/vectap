@@ -148,15 +148,64 @@ func TestRunnerVectorTopUsesCustomTerminalCmd(t *testing.T) {
 	require.NotContains(t, cmdline, "exit ${_vectap_status}")
 }
 
-func TestTopCommandLineWithoutHoldExecsVectorInForeground(t *testing.T) {
-	cmdline := topCommandLine("vector", []string{"top", "--url", "http://127.0.0.1:8686"}, false, "/tmp/vectap.pid", "vectap top")
+func TestRunnerVectorTapTerminalsUsesCustomTerminalCmd(t *testing.T) {
+	var got [][]string
+	var mu sync.Mutex
+	r := &Runner{deps: runnerDeps{
+		lookPath: func(file string) (string, error) { return "/usr/bin/" + file, nil },
+		newResolver: func(_, _ string) (kubeResolver, error) {
+			return fakeResolver{}, nil
+		},
+		newForward: func(_, _ string) (forward.Manager, error) {
+			return fakeForwardManager{}, nil
+		},
+		newCommand: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			copied := append([]string{name}, args...)
+			mu.Lock()
+			got = append(got, copied)
+			mu.Unlock()
+			return exec.CommandContext(ctx, "true")
+		},
+	}}
+
+	cfg := Config{
+		BaseConfig: runconfig.BaseConfig{
+			Type:       runconfig.SourceTypeDirect,
+			DirectURLs: []string{"http://127.0.0.1:8686"},
+			Namespace:  runconfig.DefaultNamespace,
+			Format:     runconfig.FormatText,
+			VectorPort: runconfig.DefaultVectorPort,
+		},
+		Mode:         ModeTap,
+		TapLayout:    TapLayoutTerminals,
+		VectorBin:    "vector",
+		TerminalCmd:  "xterm -e",
+		TerminalHold: true,
+		ExtraArgs:    []string{"--interval", "200"},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+	require.NoError(t, r.Vector(ctx, cfg))
+	require.Len(t, got, 1)
+	cmdline := got[0][4]
+	require.Contains(t, cmdline, "printf '\\033]0;%s\\007' 'vectap tap: default direct/1';")
+	require.Contains(t, cmdline, "'vector' 'tap' '--url' 'http://127.0.0.1:8686' '--interval' '200'")
+	require.Contains(t, cmdline, "vector tap exited with status %s")
+}
+
+func TestTerminalCommandLineWithoutHoldExecsVectorInForeground(t *testing.T) {
+	cmdline := terminalCommandLine("vector", []string{"top", "--url", "http://127.0.0.1:8686"}, false, "/tmp/vectap.pid", "vectap top")
 
 	require.Contains(t, cmdline, "printf '\\033]0;%s\\007' 'vectap top';")
 	require.Contains(t, cmdline, "echo $$ > '/tmp/vectap.pid'; exec 'vector' 'top' '--url' 'http://127.0.0.1:8686'")
 }
 
-func TestTopCommandLineWithHoldKeepsTerminalOpenAfterFailures(t *testing.T) {
-	cmdline := topCommandLine("vector", []string{"top", "--url", "http://127.0.0.1:8686"}, true, "/tmp/vectap.pid", "vectap top")
+func TestTerminalCommandLineWithHoldKeepsTerminalOpenAfterFailures(t *testing.T) {
+	cmdline := terminalCommandLine("vector", []string{"top", "--url", "http://127.0.0.1:8686"}, true, "/tmp/vectap.pid", "vectap top")
 
 	require.Contains(t, cmdline, "printf '\\033]0;%s\\007' 'vectap top';")
 	require.Contains(t, cmdline, "echo $$ > '/tmp/vectap.pid'; 'vector' 'top' '--url' 'http://127.0.0.1:8686';")
