@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"errors"
 	"fmt"
 
 	"k8s.io/client-go/rest"
@@ -8,15 +9,21 @@ import (
 )
 
 func LoadConfig(kubeConfigPath, kubeContext string) (*rest.Config, error) {
-	if cfg, err := loadKubeConfig(kubeConfigPath, kubeContext); err == nil {
+	cfg, kubeErr := loadKubeConfig(kubeConfigPath, kubeContext)
+	if kubeErr == nil {
 		return cfg, nil
 	}
 
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("load kubernetes config: %w", err)
+	cfg, inClusterErr := rest.InClusterConfig()
+	if inClusterErr == nil {
+		return cfg, nil
 	}
-	return cfg, nil
+
+	if errors.Is(inClusterErr, rest.ErrNotInCluster) {
+		return nil, fmt.Errorf("load kubeconfig: %w", kubeErr)
+	}
+
+	return nil, fmt.Errorf("load kubernetes config: %w", errors.Join(kubeErr, inClusterErr))
 }
 
 func loadKubeConfig(kubeConfigPath, kubeContext string) (*rest.Config, error) {
