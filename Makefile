@@ -92,3 +92,7 @@ proto-generate: $(PROTO_FILES) buf.yaml buf.gen.yaml ## generate vector proto an
 
 .PHONY: generate
 generate: proto-generate ## generate code
+
+.PHONY: install
+install: ## install binary into $(GOBIN) (default: $(shell go env GOPATH)/bin)
+	CGO_ENABLED=0 go install -ldflags "$(LDFLAGS)" ./cmd/vectap
